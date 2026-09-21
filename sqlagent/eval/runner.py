@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from ..agent import SqlAgent
-from ..config import DATA_DIR, RUNS_DIR, Settings, settings_from_env
+from ..config import DATA_DIR, PRICING, RUNS_DIR, Settings, settings_from_env
 from ..fewshot import select_examples
 from ..llm import MockProvider, OpenAICompatProvider
 from ..safety import SafetyViolation, parse_one, referenced_tables
@@ -161,6 +161,17 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
         "total_safety_blocks": sum(r.get("safety_blocks", 0) for r in rows),
         "total_cost_usd": round(total_cost, 5),
         "cost_per_solved_usd": round(total_cost / len(correct), 6) if correct else None,
+        # How often the agent actually used the loop. Qwen's 3-shot run answered
+        # 147/192 questions without ever executing a query, because the
+        # demonstrations themselves contain no tool calls - a prompt-format effect
+        # that pass@1 alone reports as an accuracy improvement.
+        "protocol_adherence": round(
+            sum(1 for r in rows if "run_sql" in r.get("stats", {}).get("tool_sequence", []))
+            / max(1, len(rows)), 4),
+        "n_no_sql_executed": sum(1 for r in rows if r.get("stop_reason") == "no_sql_executed"),
+        "n_zero_tool_calls": sum(1 for r in rows if not r.get("stats", {}).get("tool_sequence")),
+        # an unpriced model must never look like a free one
+        "model_priced": settings.model in PRICING,
         "harness_exceptions": exceptions,
         "gold_broken": reasons.get("gold_broken", 0),
     }

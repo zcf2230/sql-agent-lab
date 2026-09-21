@@ -168,6 +168,26 @@ barely produces any" - not "self-repair improved accuracy". The taxonomy backs t
 up: every remaining real failure is a *semantically wrong but executable* query,
 which error-driven repair cannot catch by construction.
 
+### Cross-model, and why the comparison is confounded
+
+| run | pass@1 | executed a query | zero tool calls |
+|---|---:|---:|---:|
+| deepseek-chat baseline | 89.1% | 100% | 0 |
+| deepseek-chat + 3-shot | 93.2% | 100% | 0 |
+| qwen-flash baseline | 70.3% | 89% | 0 |
+| qwen-flash + 3-shot | 75.0% | **24%** | **45** |
+
+Qwen's 3-shot number is higher than Qwen's baseline, and it is not measuring better
+SQL. The demonstrations are `question -> SQL` pairs containing **no tool calls**, so
+the model imitates the format and answers directly: 147 of 192 questions were
+settled without ever running a query, 45 without a single tool call. It stopped
+being an agent and got more questions right anyway.
+
+**A prompt format changed the execution protocol, and pass@1 reported that as an
+accuracy gain.** This is why the runner records `protocol_adherence` and
+`n_zero_tool_calls` next to pass@1: without them the table above reads as a clean
+model ranking.
+
 **Noise floor.** Three nominally identical baseline runs disagree on 2 of 192 tasks
 (1.0%). Temperature 0 does not make a model run reproducible, so no delta under
 ~1.5pp on this benchmark should be reported as an improvement.
@@ -263,8 +283,11 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 
 ## Known limitations
 
-- **One model, one prompt, one seed.** 89% for `deepseek-chat` says nothing about
-  other providers, and the few-shot result is specific to these demonstrations.
+- The cross-model comparison is confounded by tool-protocol adherence (above). A fix
+  exists - demonstrate the full tool trajectory, or force `tool_choice` - but it has
+  not been measured, so "which model is better at Text-to-SQL" is still unanswered.
+- `qwen-flash` has no price row in `PRICING`, so its cost is excluded from totals and
+  shown as 单价未录入 rather than as the $0.0 the lookup would otherwise produce.
 - **26 adversarial probes is a small sample.** 6 agent failures and 0 false claims
   are a measurement, not a guarantee; the `claimed_done` column in particular needs
   hundreds of probes before 0 means anything.

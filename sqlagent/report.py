@@ -29,6 +29,8 @@ RUN_LABELS = {
     "abl2-baseline": "baseline（无示例）",
     "abl2-3shot": "+ 3-shot 示例",
     "abl2-norepair": "− 自修复循环",
+    "qwen-baseline": "qwen-flash baseline",
+    "qwen-3shot": "qwen-flash + 3-shot",
     "mock-clean-v2": "mock 上界（非模型能力）",
 }
 CALIB_ORDER = ["reflow", "reorder_cols", "float_round", "drop_distinct", "wrong_limit", "bad_column"]
@@ -162,6 +164,16 @@ def load_tasks() -> dict:
     return {t["id"]: t for t in read_jsonl(ROOT / "data" / "tasks.jsonl")}
 
 
+def adherence(sm: dict) -> str:
+    """Fraction of tasks where the agent executed at least one query."""
+    rate = sm.get("protocol_adherence")
+    if rate is None:
+        return "—"
+    zero = sm.get("n_zero_tool_calls", 0)
+    colour = "#e07a6b" if rate < 0.9 else "#4f9d8f"
+    return f"<span style='color:{colour}'>{rate * 100:.0f}%</span>" + (f" ({zero} 题 0 工具)" if zero else "")
+
+
 def money(value: float | None) -> str:
     return "~$" + f"{value:.3f}" if value is not None else "<span class='bad'>单价未录入</span>"
 
@@ -241,7 +253,9 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
     for tag in tags:
         sm = runs[tag]["summary"]
         pct = sm.get("pass_at_1", 0) * 100
-        colour = "#8b8fa3" if tag.startswith("mock") else ("#4f9d8f" if tag == "abl2-3shot" else "#5b7fd6")
+        colour = ("#8b8fa3" if tag.startswith("mock") else
+                  "#4f9d8f" if tag.endswith("3shot") else
+                  "#c98a4b" if tag.startswith("qwen") else "#5b7fd6")
         delta = "—"
         if base and tag != "abl2-baseline" and not tag.startswith("mock"):
             d = (sm["pass_at_1"] - base["summary"]["pass_at_1"]) * 100
@@ -251,6 +265,7 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
             f"<td style='min-width:180px'>{bar(pct, colour)}</td><td class='num'>{delta}</td>"
             f"<td class='num'>{sm.get('avg_llm_steps',0)}</td>"
             f"<td class='num'>{sm.get('avg_sql_attempts',0)}</td>"
+            f"<td class='num'>{adherence(sm)}</td>"
             f"<td class='num'>{money(token_cost(list(runs[tag]['rows'].values()), sm.get('model','')))}</td></tr>"
         )
     runs_table = "\n".join(rows)
@@ -283,6 +298,11 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
     run_stems = {tag: run_stem(runs[tag]["summary"]) for tag in tags}
     browser = build_browser(tasks, traces, run_stems)
     adv_cards, adv_rows = adversarial_section()
+    # generated from the same list the table uses: a hand-written option list
+    # drifted from RUN_LABELS and silently hid the two Qwen runs from the browser
+    run_options = "".join(
+        f'<option value="{html.escape(tag, quote=True)}">{html.escape(RUN_LABELS[tag])}</option>'
+        for tag in tags)
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -336,8 +356,14 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
 
  <h2>1 · 消融结果</h2>
  <table><thead><tr><th>配置</th><th class=num>题数</th><th>pass@1</th><th class=num>Δ baseline</th>
-   <th class=num>LLM 步数</th><th class=num>SQL 尝试</th><th class=num>花费</th></tr></thead>
+   <th class=num>LLM 步数</th><th class=num>SQL 尝试</th><th class=num>真正用过工具</th>
+   <th class=num>花费</th></tr></thead>
    <tbody>{runs_table}</tbody></table>
+ <div class="note warn"><b>跨模型对比目前是混淆的，别当成能力排名。</b>Qwen 的 3-shot 准确率高于它自己的
+   baseline（75.0% vs 70.3%），但同一次运行里<b>只有 24% 的题目真正执行过 SQL，45 题一次工具都没调</b>
+   （baseline 是 89% / 0 题）。原因在示例格式：few-shot 是"问题 → SQL"两段式，不含工具调用，于是模型
+   模仿示例直接作答——它不再是个 agent，只是被问对了更多题。<b>prompt 格式改变了执行协议，而 pass@1
+   把这个报成了准确率提升。</b>这就是"真正用过工具"这一列存在的理由。</div>
  <div class="note"><b>关掉自修复后逐题结果完全不变（0 升 0 降）</b>——因为模型首次生成的 SQL
    约 99% 直接可执行，根本没有错误可修。机制本身靠注入单独验证：开=96.2% 恢复，关=0%。
    所以诚实的结论是“该组件在本数据集上测不出增益”，不是“自修复提升了准确率”。</div>
@@ -378,8 +404,7 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
  <div class="sub">每一题的完整过程：模型看到什么、调了哪个工具、数据库回什么、错在哪一步。
    上面所有数字都能在这里找到出处。</div>
  <div class="filter">
-   <select id="fRun"><option value="abl2-baseline">baseline</option><option value="abl2-3shot">3-shot</option>
-     <option value="abl2-norepair">无自修复</option><option value="mock-clean-v2">mock</option></select>
+   <select id="fRun">{run_options}</select>
    <select id="fVer"><option value="all">全部</option><option value="fail">只看失败</option>
      <option value="pass">只看通过</option></select>
    <input type="search" id="fQ" placeholder="搜索题面 / SQL…" style="flex:1">
