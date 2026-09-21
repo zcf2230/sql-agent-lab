@@ -50,17 +50,18 @@
       <div class="card"><h3>93.2%</h3><p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>$3.24</h3><p>本项目全部历史运行累计 API 花费</p></div>
+      <div class="card"><h3>~¥10.9</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>9.8M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>2 / 192</h3><p>同配置重跑判定翻转数（噪声底）</p></div>
     </div>
 
  <h2>1 · 消融结果</h2>
  <table><thead><tr><th>配置</th><th class=num>题数</th><th>pass@1</th><th class=num>Δ baseline</th>
    <th class=num>LLM 步数</th><th class=num>SQL 尝试</th><th class=num>花费</th></tr></thead>
-   <tbody><tr><td>baseline（无示例）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>—</td><td class='num'>4.71</td><td class='num'>1.01</td><td class='num'>$0.354</td></tr>
-<tr><td>+ 3-shot 示例</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:93.2%;background:#4f9d8f"></span><em>93.2%</em></div></td><td class='num'>+4.2pp</td><td class='num'>4.22</td><td class='num'>1.0</td><td class='num'>$0.350</td></tr>
-<tr><td>− 自修复循环</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>+0.0pp</td><td class='num'>4.7</td><td class='num'>1.01</td><td class='num'>$0.353</td></tr>
-<tr><td>mock 上界（非模型能力）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:100.0%;background:#8b8fa3"></span><em>100.0%</em></div></td><td class='num'>—</td><td class='num'>3.0</td><td class='num'>1.0</td><td class='num'>$0.000</td></tr></tbody></table>
+   <tbody><tr><td>baseline（无示例）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>—</td><td class='num'>4.71</td><td class='num'>1.01</td><td class='num'>~$0.167</td></tr>
+<tr><td>+ 3-shot 示例</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:93.2%;background:#4f9d8f"></span><em>93.2%</em></div></td><td class='num'>+4.2pp</td><td class='num'>4.22</td><td class='num'>1.0</td><td class='num'>~$0.167</td></tr>
+<tr><td>− 自修复循环</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>+0.0pp</td><td class='num'>4.7</td><td class='num'>1.01</td><td class='num'>~$0.166</td></tr>
+<tr><td>mock 上界（非模型能力）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:100.0%;background:#8b8fa3"></span><em>100.0%</em></div></td><td class='num'>—</td><td class='num'>3.0</td><td class='num'>1.0</td><td class='num'>~$0.046</td></tr></tbody></table>
  <div class="note"><b>关掉自修复后逐题结果完全不变（0 升 0 降）</b>——因为模型首次生成的 SQL
    约 99% 直接可执行，根本没有错误可修。机制本身靠注入单独验证：开=96.2% 恢复，关=0%。
    所以诚实的结论是“该组件在本数据集上测不出增益”，不是“自修复提升了准确率”。</div>

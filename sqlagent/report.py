@@ -34,25 +34,50 @@ RUN_LABELS = {
 CALIB_ORDER = ["reflow", "reorder_cols", "float_round", "drop_distinct", "wrong_limit", "bad_column"]
 
 
+def token_cost(rows: list[dict], model: str) -> float:
+    """Cost recomputed from stored token counts, never read from a stored figure.
+
+    `total_cost_usd` in the result files is tokens x a price list, frozen at run
+    time. When the price list turned out to be stale, every historical run kept
+    displaying the old number as if it were a fact. Tokens are the measurement;
+    price is an assumption, so the multiplication happens at display time.
+    """
+    from .config import PRICING
+
+    pin, pout = PRICING.get(model, (0.0, 0.0))
+    tin = sum(r.get("stats", {}).get("prompt_tokens", 0) for r in rows)
+    tout = sum(r.get("stats", {}).get("completion_tokens", 0) for r in rows)
+    return (tin * pin + tout * pout) / 1_000_000
+
+
 def read_jsonl(path: Path):
     if not path.exists():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def total_spend() -> float:
-    """Every dollar this project has attributed, across every recorded run file.
+def total_spend() -> tuple[float, int, int]:
+    """(estimated cost, prompt tokens, completion tokens) over every recorded run.
 
-    Summing only the runs shown on the page would print a smaller number than the
-    one actually spent, and a cost figure is exactly the kind of number people
-    round in their own favour.
+    Derived from token counts at display time rather than from the frozen
+    `total_cost_usd` in each file, and returned together with the raw token totals
+    so the reader can redo the arithmetic with a price list they trust more than
+    this one. Summing only the runs shown on the page would under-report.
     """
-    spend = 0.0
+    from .config import PRICING
+
+    spend = tin = tout = 0
     for path in RESULTS.glob("*.jsonl"):
         rows = read_jsonl(path)
-        if rows and "_summary" in rows[0]:
-            spend += rows[0]["_summary"].get("total_cost_usd") or 0.0
-    return spend
+        if not rows or "_summary" not in rows[0]:
+            continue
+        if rows[0]["_summary"].get("provider") != "openai":
+            continue
+        body = [r for r in rows[1:] if "id" in r]
+        tin += sum(r.get("stats", {}).get("prompt_tokens", 0) for r in body)
+        tout += sum(r.get("stats", {}).get("completion_tokens", 0) for r in body)
+    pin, pout = PRICING.get("deepseek-chat", (0.0, 0.0))
+    return (tin * pin + tout * pout) / 1_000_000, tin, tout
 
 
 def noise_floor() -> str:
@@ -188,7 +213,8 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
       <div class="card"><h3>{(s.get('pass_at_1', 0) * 100):.1f}%</h3><p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>{s.get('n_tasks', 0)}</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>{s.get('avg_llm_steps', 0)}</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>${total_spend():.2f}</h3><p>本项目全部历史运行累计 API 花费</p></div>
+      <div class="card"><h3>~¥{total_spend()[0] * 7.2:.1f}</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>{total_spend()[1] / 1e6:.1f}M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>{noise_floor()}</h3><p>同配置重跑判定翻转数（噪声底）</p></div>
     """
 
@@ -206,7 +232,7 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
             f"<td style='min-width:180px'>{bar(pct, colour)}</td><td class='num'>{delta}</td>"
             f"<td class='num'>{sm.get('avg_llm_steps',0)}</td>"
             f"<td class='num'>{sm.get('avg_sql_attempts',0)}</td>"
-            f"<td class='num'>${sm.get('total_cost_usd',0):.3f}</td></tr>"
+            f"<td class='num'>~${token_cost(list(runs[tag]['rows'].values()), sm.get('model','')):.3f}</td></tr>"
         )
     runs_table = "\n".join(rows)
 

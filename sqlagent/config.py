@@ -18,13 +18,28 @@ DATA_DIR = ROOT / "data"
 RUNS_DIR = ROOT / "runs"
 
 # USD per 1M tokens. Unknown models cost 0, which keeps mock/offline runs free.
+#
+# PROVENANCE, because these numbers were wrong once already. The original
+# `deepseek-chat` row (0.27 / 1.10) is a stale list price. Back-solving the first
+# 192-task benchmark - 9,764,872 prompt + 523,713 completion tokens across ten
+# runs, against the ~CNY 10 actually debited in the DeepSeek console - puts the
+# effective rate near CNY 1 / 2 per 1M tokens, i.e. the row below. That is a
+# *derived* figure from one account in one month, not a published price list, and
+# it silently absorbs DeepSeek's prefix-cache discount, which this benchmark hits
+# heavily because a ReAct loop resends the same system prompt and tool schema on
+# every one of its ~4.7 calls.
+#
+# So: treat every cost number this project prints as an estimate. If you change
+# provider or the price list moves, update this table - and prefer the console.
 PRICING: dict[str, tuple[float, float]] = {
-    "deepseek-chat": (0.27, 1.10),
-    "deepseek-reasoner": (0.84, 2.00),
+    "deepseek-chat": (0.14, 0.28),
+    "deepseek-reasoner": (0.28, 0.42),
     "qwen-plus": (0.11, 0.28),
     "glm-4-flash": (0.0, 0.0),
     "gpt-4o-mini": (0.15, 0.60),
 }
+
+USD_PER_CNY = 7.2  # rough mid-2026 rate, only used for the CNY readout
 
 PROMPT_VERSION = "v1"  # bump whenever you edit the system prompt -> invalidates cache
 

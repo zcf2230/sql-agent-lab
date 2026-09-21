@@ -144,11 +144,17 @@ whitespace, `2025-03-04` vs `2025-03-04 00:00:00`.
 Model `deepseek-chat`, temperature 0, 192 validated tasks. Every row below shares
 one code digest, so the columns are genuinely comparable.
 
-| run | pass@1 | LLM steps | Δ vs baseline | cost |
+Costs are **estimates derived from recorded token counts times a price list**, not
+billing figures - and they were wrong once: an early stale price table made this
+project report ¥23 when the DeepSeek console had debited ¥10. `report.html` now
+recomputes cost from tokens at display time and prints the raw token totals
+alongside, so the arithmetic can be redone with a price list you trust more.
+
+| run | pass@1 | LLM steps | Δ vs baseline | est. cost |
 |---|---:|---:|---:|---:|
-| baseline | 89.06% (171/192) | 4.71 | — | $0.354 |
-| + 3-shot demonstrations | **93.23%** (179/192) | 4.22 | +4.2pp (11 fixed, 3 broke) | $0.350 |
-| − self-repair loop | 89.06% (171/192) | 4.70 | 0.0pp (0 gained, 0 lost) | $0.353 |
+| baseline | 89.06% (171/192) | 4.71 | — | ~¥1.2 |
+| + 3-shot demonstrations | **93.23%** (179/192) | 4.22 | +4.2pp (11 fixed, 3 broke) | ~¥1.2 |
+| − self-repair loop | 89.06% (171/192) | 4.70 | 0.0pp (0 gained, 0 lost) | ~¥1.2 |
 | mock, no defects (harness ceiling) | 100% | 3.00 | not model capability | $0 |
 
 3-shot by difficulty: easy 98.3% · medium 97.1% · hard 84.1%
