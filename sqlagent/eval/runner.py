@@ -124,8 +124,14 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
     errored = [r for r in rows if r.get("stats", {}).get("sql_errors", 0) > 0]
     recovered = [r for r in errored if r["correct"]]
     total_cost = sum(r.get("cost_usd", 0.0) for r in rows)
+    exceptions = reasons.get("harness_exception", 0)
 
-    return {
+    # A run where the harness itself failed is not a low score. Qwen's first run came
+    # back as pass@1 = 0.0000 with 192/192 exceptions, which reads as "weak model" to
+    # anyone skimming the table - so the verdict is refused here rather than printed.
+    invalid = exceptions > max(2, 0.02 * len(rows))
+
+    out = {
         "config_hash": settings.config_hash(),
         "provider": settings.provider,
         "model": settings.model,
@@ -137,7 +143,8 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
         "n_trivial": len(rows) - len(graded),
         "n_corruption_applied": sum(1 for r in rows if r.get("corruption_applied")),
         "n_result_changed": sum(1 for r in rows if r.get("result_changed")),
-        "pass_at_1": round(len(correct) / len(graded), 4) if graded else 0.0,
+        "valid": not invalid,
+        "pass_at_1": 0.0 if invalid else (round(len(correct) / len(graded), 4) if graded else 0.0),
         "by_difficulty": {
             d: round(
                 sum(1 for r in graded if r["correct"] and r.get("difficulty") == d)
@@ -154,9 +161,15 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
         "total_safety_blocks": sum(r.get("safety_blocks", 0) for r in rows),
         "total_cost_usd": round(total_cost, 5),
         "cost_per_solved_usd": round(total_cost / len(correct), 6) if correct else None,
-        "harness_exceptions": reasons.get("harness_exception", 0),
+        "harness_exceptions": exceptions,
         "gold_broken": reasons.get("gold_broken", 0),
     }
+    if invalid:
+        out["invalid_reason"] = (
+            f"{exceptions}/{len(rows)} tasks aborted inside the harness; pass@1 is withheld "
+            f"because a measurement failure must not be readable as a model score"
+        )
+    return out
 
 
 def regression_check(rows: list[dict], baseline_path: Path, strict: bool) -> list[str]:
@@ -247,6 +260,11 @@ def main() -> int:
 
     print()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if not summary.get("valid", True):
+        print()
+        print(f"[X] RUN INVALID - {summary['invalid_reason']}")
+        print(f"    first error: {next((r.get('error','') for r in rows if r.get('error')), '')[:200]}")
+        return 3
     if summary["provider"] == "mock":
         print("\n[!] provider=mock: pass@1 above measures the GRADER and the harness, not any model.")
         print("    Read `failure_taxonomy` from a corruption sweep instead (see scripts/calibrate_grader.sh).")
