@@ -27,8 +27,16 @@ ANSWER_FORMAT = (
 
 
 def build_messages(question: str, fewshot: list[dict] | None = None, dialect_hint: str = "") -> list[dict]:
+    """Assemble the prompt. Ordering here is load-bearing.
+
+    Demonstrations must come *before* the target question. Appending them after it
+    leaves the last message as an assistant answer to some other question, and the
+    model continues from there - it cheerfully answers the final example and
+    ignores your actual query. That looked like "few-shot drops accuracy to 4%",
+    and was purely a prompt-assembly bug.
+    """
     system = SYSTEM_PROMPT + (f"\n\nSchema note: {dialect_hint}" if dialect_hint else "")
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": ANSWER_FORMAT.format(question=question)}]
-    for turn in fewshot or []:
-        messages.append(turn)
+    messages: list[dict] = [{"role": "system", "content": system}]
+    messages.extend(fewshot or [])
+    messages.append({"role": "user", "content": ANSWER_FORMAT.format(question=question)})
     return messages

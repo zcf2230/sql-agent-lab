@@ -98,3 +98,24 @@ def test_read_only_connection_cannot_write():
         conn.execute("DELETE FROM users WHERE id = 1")
     conn.close()
     assert len(list_tables(sqlite3.connect(f"file:{DB.as_posix()}?mode=ro", uri=True))) == 20
+
+
+def test_a_hallucinated_column_returns_an_error_not_a_crash():
+    """Regression: this escaped as a QueryError and killed the whole task.
+
+    Asking for a column that does not exist is one of the most frequent real model
+    mistakes, so the tool layer has to hand it back as readable feedback the repair
+    loop can act on. Crashing instead both loses the task and hides the behaviour
+    you most want to measure.
+    """
+    from sqlagent.config import Settings
+    from sqlagent.tools import Toolbox
+
+    conn = sqlite3.connect(f"file:{DB.as_posix()}?mode=ro", uri=True)
+    box = Toolbox(conn, Settings(db_path=str(DB)))
+    for args in ({"table": "study_sessions", "column": "device_type"},
+                 {"table": "nosuchtable", "column": "id"},
+                 {"table": "users", "column": "nope"}):
+        out = box.call("sample_values", args)
+        assert out["ok"] is False and out["error_type"], args
+    conn.close()

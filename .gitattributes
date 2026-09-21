@@ -1,0 +1,10 @@
+# Pin line endings. `config.code_hash()` digests source bytes to invalidate the
+# result cache, and a CRLF conversion on checkout would change that digest without
+# any change in behaviour - silently orphaning every cached verdict.
+* text=auto eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+*.jsonl text eol=lf
+*.toml text eol=lf
+*.db  binary
+*.dpapi binary

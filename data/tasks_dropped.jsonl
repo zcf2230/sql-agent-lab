@@ -1,0 +1,14 @@
+{"id": "null_handling-009", "why": "vacuous_gold: the only correct answer is zero or nothing"}
+{"id": "ordering_limit-001", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-002", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-004", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-006", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-008", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-009", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "ordering_limit-010", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "having-005", "why": "vacuous_gold: the only correct answer is zero or nothing"}
+{"id": "subquery-004", "why": "vacuous_gold: the only correct answer is zero or nothing"}
+{"id": "subquery-005", "why": "vacuous_gold: the only correct answer is zero or nothing"}
+{"id": "join_three-010", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "arithmetic-001", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}
+{"id": "arithmetic-004", "why": "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists"}

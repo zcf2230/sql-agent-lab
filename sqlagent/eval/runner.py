@@ -12,6 +12,7 @@ progress.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import statistics
@@ -22,6 +23,7 @@ from pathlib import Path
 
 from ..agent import SqlAgent
 from ..config import DATA_DIR, RUNS_DIR, Settings, settings_from_env
+from ..fewshot import select_examples
 from ..llm import MockProvider, OpenAICompatProvider
 from ..safety import SafetyViolation, parse_one, referenced_tables
 from ..tools import Toolbox
@@ -60,7 +62,7 @@ def _conn(settings: Settings) -> sqlite3.Connection:
     return existing
 
 
-def run_one(task: dict, settings: Settings, provider_factory) -> dict:
+def run_one(task: dict, settings: Settings, provider_factory, all_tasks: list[dict] | None = None) -> dict:
     cache_file = CACHE_DIR / settings.config_hash() / f"{task['id']}.json"
     if cache_file.exists():
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
@@ -72,7 +74,9 @@ def run_one(task: dict, settings: Settings, provider_factory) -> dict:
         # inside the try on purpose: one odd gold query must not kill a 200-task sweep
         provider = provider_factory(task)
         agent = SqlAgent(settings, Toolbox(conn, settings))
-        result = agent.run(task["question"], task["id"], provider)
+        # examples exclude the task being answered; passing None keeps k inert
+        shots = select_examples(all_tasks, task["id"], settings.fewshot_k, settings.seed)
+        result = agent.run(task["question"], task["id"], provider, fewshot=shots)
     except Exception as exc:  # a harness bug shows up as a failed row, not a dead run
         return {
             "id": task["id"],
@@ -102,6 +106,7 @@ def run_one(task: dict, settings: Settings, provider_factory) -> dict:
         "reason": verdict.reason,
         "require_order": task.get("require_order", False),
         "corruption_applied": getattr(provider, "applied", None),
+        "n_fewshot_msgs": len(shots),
         "result_changed": changed,
         "detail": verdict.detail,
     }
@@ -190,6 +195,8 @@ def main() -> int:
     args = ap.parse_args()
 
     overrides = {"provider": args.provider, "model": args.model, "corruption": args.corruption}
+    if args.tasks.exists():
+        overrides["dataset_hash"] = hashlib.sha256(args.tasks.read_bytes()).hexdigest()[:8]
     if args.no_self_repair:
         overrides["self_repair"] = False
     if args.fewshot_k is not None:
@@ -224,7 +231,7 @@ def main() -> int:
     results_dir.mkdir(exist_ok=True)
     rows: list[dict] = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        for i, row in enumerate(pool.map(lambda t: run_one(t, settings, factory), tasks), 1):
+        for i, row in enumerate(pool.map(lambda t: run_one(t, settings, factory, tasks), tasks), 1):
             rows.append(row)
             if i % 25 == 0 or i == len(tasks):
                 marks = "".join("." if r.get("trivial") else ("+" if r["correct"] else "-") for r in rows[-25:])

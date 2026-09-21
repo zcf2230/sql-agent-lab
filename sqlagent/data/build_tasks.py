@@ -4,13 +4,19 @@ Hand-writing 200 unambiguous gold queries is slow and error-prone. Instead each
 item comes from a *family* with a parameter pool, which gives us breadth cheaply
 while keeping the gold SQL machine-authored and therefore actually correct.
 
-Three rules the generator enforces, because a broken benchmark silently
-inflates every number downstream:
+Four rules the generator enforces, because a broken benchmark silently corrupts
+every number downstream:
 
-  1. every gold SQL must execute against the real database (T2 traps included)
-  2. question text must be unique across the set
-  3. gold queries that return zero rows are tagged `trivial` so the runner can
-     exclude them from the headline metric instead of crediting empty matches
+  1. every gold SQL must execute against the real database
+  2. **value pools are read out of the database, never typed by hand.** The first
+     version hardcoded ten city names into the question pool while the loader only
+     stored five of them, so half the `filter_projection` items asked about a city
+     with zero users. Nine "agent failures" were really my authoring bug, and they
+     made the *easiest* category look the worst.
+  3. a gold whose only answer is zero (`COUNT(*)` = 0, or an empty result) is
+     dropped as `vacuous`: it scores an accident, not a query
+  4. a top-k whose sort keys tie at the LIMIT boundary is dropped as
+     `ambiguous_topk`: no unique correct row-set exists, so no grader can judge it
 """
 
 from __future__ import annotations
@@ -29,14 +35,37 @@ from ..safety import SafetyViolation, parse_one, referenced_tables
 ROOT = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "learning_platform.db"
 OUT = ROOT / "data" / "tasks.jsonl"
+DROPPED = ROOT / "data" / "tasks_dropped.jsonl"
 
-CITIES = ["Beijing", "Shanghai", "shenzhen", "Hangzhou", "Chengdu", "Guangzhou", "Wuhan", "Nanjing", "Suzhou", "Chongqing"]
-CATS = ["data", "frontend", "backend", "ai", "design", "product", "devops"]
-CHANNELS = ["web", "ios", "android", "mini_program"]
-DEVICES = ["desktop", "mobile", "tablet"]
-LEVELS = ["beginner", "intermediate", "advanced"]
-YEARS = ["2025"]
-MONTHS = [f"2025-{m:02d}" for m in range(1, 13)]
+if not DB_PATH.exists():
+    raise SystemExit("no database - run: python -m sqlagent.data.build_db before importing this module")
+
+_INIT = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
+
+
+def _pool(sql: str, params: tuple = (), normalise: bool = False) -> list[str]:
+    """Distinct real values from the live database.
+
+    `normalise` folds the case/whitespace mess the loader stores (' BEIJING ') and
+    title-cases the result so question text reads naturally; the gold SQL compares
+    with LOWER(TRIM(...)) so the surface form does not affect correctness.
+    """
+    values = [r[0] for r in _INIT.execute(sql, params).fetchall() if r[0] is not None]
+    if normalise:
+        values = sorted({str(v).strip().casefold().capitalize() for v in values})
+    return sorted(set(values))
+
+
+CITIES = _pool("SELECT DISTINCT city FROM users WHERE city IS NOT NULL", normalise=True)
+CATS = _pool("SELECT DISTINCT category FROM courses")
+CHANNELS = _pool("SELECT DISTINCT channel FROM enrollments")
+DEVICES = _pool("SELECT DISTINCT device FROM study_sessions")
+LEVELS = _pool("SELECT DISTINCT level FROM courses", normalise=True)
+MONTHS = _pool("SELECT DISTINCT SUBSTR(enrolled_at,1,7) FROM enrollments")
+KINDS = _pool("SELECT DISTINCT kind FROM lessons")
+
+if not all([CITIES, CATS, MONTHS]):
+    raise SystemExit("value pools came back empty - is the database populated?")
 
 # Rewordings that must not change meaning. Used to stop the agent from pattern
 # matching on a fixed surface form.
@@ -466,22 +495,24 @@ def _f19():
     ]
 
 
-def tie_risk(conn: sqlite3.Connection, sql: str) -> bool | None:
-    """True/False for a LIMIT top-k whose cut lands inside equal sort keys.
+def ordering_audit(conn: sqlite3.Connection, sql: str) -> dict:
+    """Describe what the gold query's ORDER BY does, so we know what may be scored.
 
-    Tied top-k has no single correct answer, so those items must not be scored on
-    sequence. None means "not statically checkable" (the ORDER BY key could not be
-    resolved to an output column), which the build report surfaces rather than
-    quietly treating as safe.
+    Returns {order_keys, limited, tie}. `tie` means equal sort keys sit where the
+    sequence could differ:
+      * with a LIMIT  -> the *row set itself* is not determined -> ill-posed, drop it
+      * without one   -> the set is complete, only the sequence is free -> keep,
+        but never enforce order
+    A `None` order_keys means the sort key could not be resolved to an output
+    column, which the build report surfaces instead of quietly treating as safe.
     """
     try:
         tree = parse_one(sql)
     except SafetyViolation:
-        return None
+        return {"order_keys": None, "limited": False, "tie": False}
     limit, order = tree.args.get("limit"), tree.args.get("order")
     if order is None:
-        # no outer ORDER BY: nothing to tie on, and sequence must never be enforced
-        return None
+        return {"order_keys": None, "limited": limit is not None, "tie": False}
     outs = [(e.alias_or_name or "").lower() for e in tree.expressions]
     keys: list[int] = []
     for o in order.expressions:
@@ -493,26 +524,35 @@ def tie_risk(conn: sqlite3.Connection, sql: str) -> bool | None:
             if name in outs:
                 keys.append(outs.index(name))
             else:
-                return None
+                return {"order_keys": None, "limited": limit is not None, "tie": False}
     if not keys:
-        return None
+        return {"order_keys": None, "limited": limit is not None, "tie": False}
+
     if limit is None:
-        # full listing: any repeated sort key means the sequence is not unique
         rows = execute(conn, sql)
         if not rows.ok:
-            return None
-        k = [tuple(r[j] for j in keys) for r in rows.rows]
-        return any(a == b for a, b in zip(k, k[1:]))
+            return {"order_keys": keys, "limited": False, "tie": False}
+        seq = [tuple(r[j] for j in keys) for r in rows.rows]
+        return {"order_keys": keys, "limited": False, "tie": any(a == b for a, b in zip(seq, seq[1:]))}
+
     probe = tree.copy()
     probe.set("limit", None)
     probe.set("offset", None)
     full = execute(conn, probe.sql(dialect="sqlite"))
     if not full.ok:
-        return None
+        return {"order_keys": keys, "limited": True, "tie": False}
     k = int(limit.expression.this)
     if len(full.rows) <= k:
-        return False
-    return tuple(full.rows[k - 1][j] for j in keys) == tuple(full.rows[k][j] for j in keys)
+        return {"order_keys": keys, "limited": True, "tie": False}
+    tie = tuple(full.rows[k - 1][j] for j in keys) == tuple(full.rows[k][j] for j in keys)
+    return {"order_keys": keys, "limited": True, "tie": tie}
+
+
+def is_vacuous(rows: list[list]) -> bool:
+    """A gold that answers 'zero', or nothing at all, tests whether the agent guesses."""
+    if not rows:
+        return True
+    return len(rows) == 1 and len(rows[0]) == 1 and rows[0][0] in (0, 0.0, None)
 
 
 def demands_order(question: str) -> bool:
@@ -527,75 +567,80 @@ _ORDER_DEMANDS = re.compile(
 )
 
 
+
 def main() -> None:
-    if not DB_PATH.exists():
-        raise SystemExit("no database - run: python -m sqlagent.data.build_db")
     conn = sqlite3.connect(f"file:{DB_PATH.as_posix()}?mode=ro", uri=True)
 
     tasks: list[dict] = []
+    dropped: list[dict] = []
     seen_questions: set[str] = set()
-    broken: list[str] = []
-    unchecked: list[str] = []
-    tied: list[str] = []
+
+    def drop(item_id: str, why: str) -> None:
+        dropped.append({"id": item_id, "why": why})
 
     for category, difficulty, items in FAMILIES:
         for idx, (question, sql) in enumerate(items, 1):
+            item_id = f"{category}-{idx:03d}"
             key = question.strip().lower()
             if key in seen_questions:
                 continue
             seen_questions.add(key)
             ex = execute(conn, sql)
             if not ex.ok:
-                broken.append(f"[{category}#{idx}] {ex.error[:120]}\n    {sql}")
+                drop(item_id, f"gold_does_not_execute: {ex.error[:120]}")
+                continue
+            if is_vacuous(ex.rows):
+                drop(item_id, "vacuous_gold: the only correct answer is zero or nothing")
+                continue
+            audit = ordering_audit(conn, sql)
+            if audit["tie"] and audit["limited"]:
+                drop(item_id, "ambiguous_topk: sort keys tie at the LIMIT cut, no unique row set exists")
                 continue
             try:
                 tables = sorted(referenced_tables(parse_one(sql)))
             except SafetyViolation:
                 tables = []
-            risk = tie_risk(conn, sql)
-            if risk is True:
-                tied.append(f"{category}-{idx:03d}")
-            if risk is None and demands_order(question):
-                unchecked.append(f"{category}-{idx:03d}")
             tasks.append({
-                "id": f"{category}-{idx:03d}",
+                "id": item_id,
                 "question": question,
                 "gold_sql": sql,
                 "category": category,
                 "difficulty": difficulty,
                 "gold_tables": tables,
                 "gold_row_count": len(ex.rows),
-                "trivial": len(ex.rows) == 0,
-                # enforced only where the question asked for an order AND the
-                # requested top-k is provably tie-free
-                # enforced only when the question asked for an order, the gold
-                # really sorts, and that sort is provably tie-free
-                "require_order": demands_order(question) and risk is False,
+                "trivial": False,
+                # enforced only when the question asked for an order, the gold really
+                # sorts, and that sort admits no free reordering
+                "require_order": demands_order(question) and audit["order_keys"] is not None and not audit["tie"],
             })
 
-    out = OUT
-    out.write_text("\n".join(json.dumps(t, ensure_ascii=False) for t in tasks) + "\n", encoding="utf-8")
+    NL = chr(10)
+    OUT.write_text(NL.join(json.dumps(t, ensure_ascii=False) for t in tasks) + NL, encoding="utf-8")
+    DROPPED.write_text(NL.join(json.dumps(d, ensure_ascii=False) for d in dropped) + NL, encoding="utf-8")
 
-    print(f"wrote {len(tasks)} tasks -> {out.relative_to(ROOT)}")
+    print(f"wrote {len(tasks)} tasks -> {OUT.relative_to(ROOT)}")
     by_cat: dict[str, int] = {}
     by_diff: dict[str, int] = {}
     for t in tasks:
         by_cat[t["category"]] = by_cat.get(t["category"], 0) + 1
         by_diff[t["difficulty"]] = by_diff.get(t["difficulty"], 0) + 1
-    print("by category:", json.dumps(by_cat, indent=None))
+    print("by category:", json.dumps(by_cat))
     print("by difficulty:", by_diff)
-    print("trivial (0-row) tasks:", sum(1 for t in tasks if t["trivial"]))
     print("tasks enforcing row order:", sum(1 for t in tasks if t["require_order"]))
-    print(f"duplicate sort keys ({len(tied)}) -> scored as sets, not sequences: {tied}")
-    if unchecked:
-        print(f"note: {len(unchecked)} questions imply an order the grader cannot enforce "
-              f"(gold has no resolvable outer ORDER BY): {unchecked}")
-    if broken:
-        print(f"\n!! {len(broken)} gold queries FAILED to execute and were dropped:")
-        for b in broken:
-            print("  " + b)
+    print("")
+    print(f"dropped {len(dropped)} -> {DROPPED.relative_to(ROOT)}")
+    reasons: dict[str, list[str]] = {}
+    for d in dropped:
+        reasons.setdefault(d["why"].split(":")[0], []).append(d["id"])
+    for why, ids in sorted(reasons.items()):
+        print(f"  {why:<20} {len(ids):>3}  {', '.join(ids[:5])}{' ...' if len(ids) > 5 else ''}")
+    loose = [t["id"] for t in tasks if demands_order(t["question"]) and not t["require_order"]]
+    if loose:
+        print(f"note: {len(loose)} kept questions imply an order we cannot enforce "
+              "(gold has no resolvable outer ORDER BY) -> order not scored")
+    print("value pools read from the database:",
+          f"{len(CITIES)} cities, {len(CATS)} categories, {len(MONTHS)} months, {len(LEVELS)} levels")
     conn.close()
-
 
 if __name__ == "__main__":
     main()

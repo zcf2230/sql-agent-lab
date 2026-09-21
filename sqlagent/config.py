@@ -28,6 +28,31 @@ PRICING: dict[str, tuple[float, float]] = {
 
 PROMPT_VERSION = "v1"  # bump whenever you edit the system prompt -> invalidates cache
 
+# Files whose behaviour determines a verdict. Editing any of them - including a
+# comment - changes the digest and invalidates the result cache.
+CODE_FILES = ("agent.py", "tools.py", "prompts.py", "fewshot.py", "llm.py", "safety.py", "db.py", "eval/scoring.py")
+
+
+def code_hash() -> str:
+    """Self-invalidating fingerprint of the harness source.
+
+    A manually bumped version constant is the same footgun in a different hat: the
+    person editing the judge is the person who has to remember that the judge
+    changed. Hashing the files makes forgetting impossible.
+
+    Newlines are normalised first. This reads *working-tree* bytes while git stores
+    LF, so a clone with different line endings would otherwise produce a different
+    digest and orphan the whole result cache for no behavioural reason.
+    """
+    here = Path(__file__).resolve().parent
+    digest = hashlib.sha256()
+    for name in CODE_FILES:
+        path = here / name
+        body = path.read_bytes().replace(b"\r\n", b"\n") if path.exists() else b"<missing>"
+        digest.update(name.encode())
+        digest.update(body)
+    return digest.hexdigest()[:8]
+
 
 def load_env(path: Path | None = None) -> None:
     """Minimal .env loader (KEY=VALUE, '#' comments). Avoids a dependency."""
@@ -67,6 +92,7 @@ class Settings:
     seed: int = 20260921
     prompt_version: str = PROMPT_VERSION
     corruption: str = "none"  # mock provider only; see MockProvider docstring
+    dataset_hash: str = ""  # digest of the task file, filled in by the runner
 
     def cost_usd(self, prompt_tokens: int, completion_tokens: int) -> float:
         if self.provider == "mock":
@@ -75,7 +101,13 @@ class Settings:
         return (prompt_tokens * pin + completion_tokens * pout) / 1_000_000
 
     def config_hash(self) -> str:
-        """Stable fingerprint of everything that affects a score."""
+        """Stable fingerprint of everything that affects a score.
+
+        The dataset digest is part of this on purpose. Task ids are stable across
+        regeneration (`filter_projection-006` stays `filter_projection-006`), so a
+        cache keyed only on the model config would keep serving last week's verdict
+        for a question and gold you have since rewritten.
+        """
         relevant = {
             "provider": self.provider,
             "model": self.model,
@@ -86,6 +118,8 @@ class Settings:
             "prompt_version": self.prompt_version,
             "seed": self.seed,
             "corruption": self.corruption,
+            "dataset": self.dataset_hash,
+            "code": code_hash(),
         }
         blob = json.dumps(relevant, sort_keys=True).encode()
         return hashlib.sha256(blob).hexdigest()[:12]
@@ -100,11 +134,22 @@ class Settings:
         return "__".join(bits)
 
 
+def resolve_api_key() -> str:
+    """Environment (which .env feeds into), then the DPAPI blob. Never log the result."""
+    if key := os.environ.get("SQLAGENT_API_KEY", ""):
+        return key
+    try:
+        from . import secrets  # Windows-only; lazy so the package imports elsewhere
+        return secrets.load() or ""
+    except (ImportError, OSError):
+        return ""
+
+
 def settings_from_env(**overrides) -> Settings:
     load_env()
     kwargs: dict = {}
-    if os.environ.get("SQLAGENT_API_KEY"):
-        kwargs["api_key"] = os.environ["SQLAGENT_API_KEY"]
+    if key := resolve_api_key():
+        kwargs["api_key"] = key
     if os.environ.get("SQLAGENT_MODEL"):
         kwargs["model"] = os.environ["SQLAGENT_MODEL"]
     if os.environ.get("SQLAGENT_BASE_URL"):

@@ -118,6 +118,11 @@ class Toolbox:
             if name == "run_sql":
                 return self._run_sql(str(args.get("sql", "")))
             return {"ok": False, "error_type": "no_such_tool", "error": f"unknown tool {name}"}
+        except db.QueryError as exc:
+            # Every tool can hit this - a hallucinated column name is one of the
+            # most common real agent mistakes, and it must come back as a readable
+            # tool error the loop can repair from, not as a crashed task.
+            return exc.as_tool_error()
         except (TypeError, KeyError, AttributeError) as exc:
             # a model can hand us any shape of JSON; never let it crash the run
             return {"ok": False, "error_type": "bad_arguments", "error": f"{type(exc).__name__}: {exc}"}
