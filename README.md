@@ -195,9 +195,14 @@ What this does *not* protect against, stated plainly: a process already running 
 you can call the same API with the same entropy, and anyone holding your Windows
 login password holds the master key. Beyond that you need a real secret manager.
 
-Reseed after rotating: `SQLAGENT_API_KEY=... python -m sqlagent.secrets`. The key
-is deliberately accepted only from the environment, never as an argument - argv is
-recorded by shell history, process monitors and crash reporters.
+**To reseed after rotating the key:** open `.env` in an editor, add a
+`SQLAGENT_API_KEY=sk-...` line, save, then run `python -m sqlagent.secrets`. It seals
+the value into the blob and rewrites `.env` without it. Do **not** reseed with
+`SQLAGENT_API_KEY=sk-... python -m sqlagent.secrets`: shells persist that in plaintext
+history (PowerShell writes `ConsoleHost_history.txt`), which leaks the key to a second
+file in exchange for saving one editor trip. The key is accepted only from `.env`, the
+environment, or an interactive prompt - never as an argument, since argv is recorded
+by process monitors and crash reporters.
 
 Encrypting a key is not the same as it being secret. Anything that has ever been
 pasted into a chat window, a shell command line or a screenshot is compromised and
