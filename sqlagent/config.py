@@ -59,7 +59,7 @@ def load_env(path: Path | None = None) -> None:
     env_path = path or ROOT / ".env"
     if not env_path.exists():
         return
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
+    for raw in env_path.read_text(encoding="utf-8-sig").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -135,9 +135,15 @@ class Settings:
 
 
 def resolve_api_key() -> str:
-    """Environment (which .env feeds into), then the DPAPI blob. Never log the result."""
-    if key := os.environ.get("SQLAGENT_API_KEY", ""):
-        return key
+    """Environment (which .env feeds into), then the DPAPI blob. Never log the result.
+
+    Placeholder values are skipped rather than returned. Otherwise a half-filled
+    `.env` template would outrank a working sealed key and every request would 401
+    with no clue why.
+    """
+    candidate = os.environ.get("SQLAGENT_API_KEY", "")
+    if candidate and not candidate.lower().startswith(("sk-your-key", "paste_", "placeholder")):
+        return candidate
     try:
         from . import secrets  # Windows-only; lazy so the package imports elsewhere
         return secrets.load() or ""

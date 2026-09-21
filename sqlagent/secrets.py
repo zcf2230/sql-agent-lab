@@ -104,16 +104,37 @@ def load() -> str | None:
     return unwrap(BLOB_PATH.read_bytes()).decode("utf-8")
 
 
+def looks_placeholder(key: str) -> bool:
+    """Reject values that are not really keys.
+
+    The failure being defended against is ordinary: a template line is left in
+    place, the placeholder gets sealed, every later request 401s, and the obvious
+    conclusion is that the API is broken.
+    """
+    low = key.strip().lower()
+    if len(low) < 20 or not low.startswith("sk-"):
+        return True
+    return any(marker in low for marker in ("your-key", "paste", "placeholder", "xxxx", "000000"))
+
+
 def migrate_from_dotenv(delete_source: bool = True) -> bool:
     """Move a plaintext .env key into the DPAPI blob, then destroy the plaintext."""
     if not DOTENV_PATH.exists():
         return False
     key = None
-    for line in DOTENV_PATH.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig: Notepad can prepend a BOM, which would otherwise glue itself onto
+    # the first key name and make that line silently unparseable
+    for line in DOTENV_PATH.read_text(encoding="utf-8-sig").splitlines():
         if line.startswith("SQLAGENT_API_KEY="):
             key = line.split("=", 1)[1].strip().strip("'\"")
-    if not key or key.startswith("sk-your-key"):
+    if not key:
+        print("no SQLAGENT_API_KEY line found in .env")
         return False
+    if looks_placeholder(key):
+        raise SystemExit(
+            "That does not look like a real key (need sk-..., at least 20 chars, and not a\n"
+            "placeholder). Replace the value after 'SQLAGENT_API_KEY=' in .env and run again."
+        )
     store(key)
     if delete_source:
         DOTENV_PATH.write_text(
