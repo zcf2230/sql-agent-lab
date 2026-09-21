@@ -128,4 +128,9 @@ tests/               ← 82 个测试
   而这个项目一整轮都在处理"两处真值来源漂移"造成的错误。
 - 要上传 GitHub：桌面这份可以直接 `git push`（历史完整，含我自己搞坏又修好的记录——
   这部分别删，它是你最硬的素材）。上传前确认一次：
-  `git ls-files | xargs grep -l "sk-[A-Za-z0-9]\{20,\}" || echo clean`
+  ```bash
+  .venv/Scripts/python.exe -m pytest tests/test_secrets.py -k plaintext -v
+  ```
+  这条会扫整棵工作树，按 key 的形状匹配（同时覆盖 DeepSeek 和 DashScope 两种格式）。
+  **别用 `git ls-files | xargs grep ...`**：xargs 会把任何子进程的非零退出码统一折成 123，
+  于是它既不能证明"干净"也不能证明"有货"——我在这份文档里写过一次，是错的。
