@@ -177,6 +177,10 @@ which error-driven repair cannot catch by construction.
 | qwen-flash baseline | 70.3% | 89% | 0 |
 | qwen-flash + 3-shot | 75.0% | **24%** | **45** |
 
+The same confound moves the money: the 3-shot Qwen run is cheaper (CNY 0.44 vs 0.56)
+precisely because it stopped calling tools. Cost and accuracy were distorted by one
+cause, so neither column can be quoted alone.
+
 Qwen's 3-shot number is higher than Qwen's baseline, and it is not measuring better
 SQL. The demonstrations are `question -> SQL` pairs containing **no tool calls**, so
 the model imitates the format and answers directly: 147 of 192 questions were
@@ -286,8 +290,13 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 - The cross-model comparison is confounded by tool-protocol adherence (above). A fix
   exists - demonstrate the full tool trajectory, or force `tool_choice` - but it has
   not been measured, so "which model is better at Text-to-SQL" is still unanswered.
-- `qwen-flash` has no price row in `PRICING`, so its cost is excluded from totals and
-  shown as 单价未录入 rather than as the $0.0 the lookup would otherwise produce.
+- `PRICING` holds three kinds of entry with different standing: `deepseek-chat` is
+  back-solved from console billing, `qwen-flash` is a **blended** rate calibrated from
+  CNY 1 over 1,897,639 tokens (97.3% input) and cannot separate input from output,
+  and `qwen-plus`/`gpt-4o-mini` are **unverified guesses**. `glm-4-flash` was deleted
+  rather than left as `(0.0, 0.0)`: a zero price reads as "free" the same way an
+  understated one reads as "cheap". Totals cross-check at CNY 11.9 estimated versus
+  CNY 11 actually debited across both providers.
 - **26 adversarial probes is a small sample.** 6 agent failures and 0 false claims
   are a measurement, not a guarantee; the `claimed_done` column in particular needs
   hundreds of probes before 0 means anything.

@@ -50,7 +50,7 @@
       <div class="card"><h3>93.2%</h3><p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>~¥10.9</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>~¥11.9</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
       <div class="card"><h3>11.6M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>2 / 192</h3><p>同配置重跑判定翻转数（噪声底）</p></div>
     </div>
@@ -62,8 +62,8 @@
    <tbody><tr><td>baseline（无示例）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>—</td><td class='num'>4.71</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.167</td></tr>
 <tr><td>+ 3-shot 示例</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:93.2%;background:#4f9d8f"></span><em>93.2%</em></div></td><td class='num'>+4.2pp</td><td class='num'>4.22</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.167</td></tr>
 <tr><td>− 自修复循环</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>+0.0pp</td><td class='num'>4.7</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.166</td></tr>
-<tr><td>qwen-flash baseline</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:70.3%;background:#c98a4b"></span><em>70.3%</em></div></td><td class='num'>-18.8pp</td><td class='num'>5.21</td><td class='num'>0.91</td><td class='num'><span style='color:#e07a6b'>89%</span></td><td class='num'><span class='bad'>单价未录入</span></td></tr>
-<tr><td>qwen-flash + 3-shot</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:75.0%;background:#4f9d8f"></span><em>75.0%</em></div></td><td class='num'>-14.1pp</td><td class='num'>3.63</td><td class='num'>0.25</td><td class='num'><span style='color:#e07a6b'>24%</span> (45 题 0 工具)</td><td class='num'><span class='bad'>单价未录入</span></td></tr>
+<tr><td>qwen-flash baseline</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:70.3%;background:#c98a4b"></span><em>70.3%</em></div></td><td class='num'>-18.8pp</td><td class='num'>5.21</td><td class='num'>0.91</td><td class='num'><span style='color:#e07a6b'>89%</span></td><td class='num'>~$0.078</td></tr>
+<tr><td>qwen-flash + 3-shot</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:75.0%;background:#4f9d8f"></span><em>75.0%</em></div></td><td class='num'>-14.1pp</td><td class='num'>3.63</td><td class='num'>0.25</td><td class='num'><span style='color:#e07a6b'>24%</span> (45 题 0 工具)</td><td class='num'>~$0.061</td></tr>
 <tr><td>mock 上界（非模型能力）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:100.0%;background:#8b8fa3"></span><em>100.0%</em></div></td><td class='num'>—</td><td class='num'>3.0</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.046</td></tr></tbody></table>
  <div class="note warn"><b>跨模型对比目前是混淆的，别当成能力排名。</b>Qwen 的 3-shot 准确率高于它自己的
    baseline（75.0% vs 70.3%），但同一次运行里<b>只有 24% 的题目真正执行过 SQL，45 题一次工具都没调</b>

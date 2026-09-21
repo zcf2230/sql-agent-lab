@@ -34,8 +34,18 @@ RUNS_DIR = ROOT / "runs"
 PRICING: dict[str, tuple[float, float]] = {
     "deepseek-chat": (0.14, 0.28),
     "deepseek-reasoner": (0.28, 0.42),
+    # CALIBRATED BLENDED RATE, not a price list. Two Qwen runs consumed 1,897,639
+    # tokens (97.3% of them input) against CNY 1 debited in the DashScope console,
+    # which gives CNY 0.527 / 1M tokens overall. The same figure is entered for
+    # input and output because a single billing observation cannot separate them.
+    # Valid wherever the mix stays input-dominated; a run that shifts the ratio
+    # (long answers, few tool calls) will be wrong by roughly that shift.
+    "qwen-flash": (0.0732, 0.0732),
+    # UNVERIFIED - carried over from the original guess and never checked against a
+    # bill. No GLM row at all: a (0.0, 0.0) entry reads as "this model is free",
+    # which is the same mistake as an understated price, just in the flattering
+    # direction. Omit it and the report says 单价未录入 instead.
     "qwen-plus": (0.11, 0.28),
-    "glm-4-flash": (0.0, 0.0),
     "gpt-4o-mini": (0.15, 0.60),
 }
 
