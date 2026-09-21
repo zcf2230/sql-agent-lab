@@ -33,6 +33,15 @@ Those five commands need **no API key** and produce real, reproducible numbers.
 To measure an actual model, seal a key with `SQLAGENT_API_KEY=... python -m
 sqlagent.secrets` (see Credentials), then:
 
+The headline artefact is a single offline file - no server, no CDN, no API key, no
+inference cost. Double-click it.
+
+```bash
+python -m sqlagent.report        # -> report.html (~3 MB): metrics, ablation table,
+                                 #    grader calibration, failure taxonomy, and a
+                                 #    per-task trace replay that follows the run selector
+```
+
 ```bash
 python -m sqlagent.eval.runner --provider openai --tag abl-baseline
 python -m sqlagent.eval.runner --provider openai --fewshot-k 3 --tag abl-3shot
@@ -242,7 +251,7 @@ sqlagent/
   agent.py  config.py  db.py  fewshot.py  llm.py  prompts.py  safety.py  secrets.py
   tools.py  trace.py
   data/build_db.py  data/build_tasks.py
-  eval/scoring.py  eval/runner.py
+  eval/scoring.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
 scripts/calibrate.py
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py  test_secrets.py
 data/tasks.jsonl        # 192 scored tasks
