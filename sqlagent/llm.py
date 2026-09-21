@@ -56,8 +56,8 @@ class OpenAICompatProvider:
         self.s = settings
         if not settings.api_key:
             raise RuntimeError(
-                "provider='openai' needs an API key. Put SQLAGENT_API_KEY=... in .env "
-                "(copy .env.example), or run with provider='mock'."
+                "provider='openai' has no key. Seal one: put SQLAGENT_API_KEY=sk-... in .env "
+                "and run `python -m sqlagent.secrets`. Do not pass it on the command line."
             )
         self._url = settings.base_url.rstrip("/") + "/chat/completions"
         self._client = httpx.Client(timeout=settings.request_timeout_s)
