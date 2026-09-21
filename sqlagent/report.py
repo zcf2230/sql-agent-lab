@@ -66,18 +66,21 @@ def total_spend() -> tuple[float, int, int]:
     """
     from .config import PRICING
 
-    spend = tin = tout = 0
+    spend = 0.0
+    tin = tout = 0
     for path in RESULTS.glob("*.jsonl"):
         rows = read_jsonl(path)
         if not rows or "_summary" not in rows[0]:
             continue
-        if rows[0]["_summary"].get("provider") != "openai":
+        sm = rows[0]["_summary"]
+        if sm.get("provider") != "openai":
             continue
         body = [r for r in rows[1:] if "id" in r]
+        # per-model pricing: a second provider must not be billed at deepseek's rate
+        spend += token_cost(body, sm.get("model", ""))
         tin += sum(r.get("stats", {}).get("prompt_tokens", 0) for r in body)
         tout += sum(r.get("stats", {}).get("completion_tokens", 0) for r in body)
-    pin, pout = PRICING.get("deepseek-chat", (0.0, 0.0))
-    return (tin * pin + tout * pout) / 1_000_000, tin, tout
+    return spend, tin, tout
 
 
 def noise_floor() -> str:

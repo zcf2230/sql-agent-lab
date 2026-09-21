@@ -149,19 +149,19 @@ class Settings:
         return "__".join(bits)
 
 
-def resolve_api_key() -> str:
-    """Environment (which .env feeds into), then the DPAPI blob. Never log the result.
+def resolve_api_key(model: str = "") -> str:
+    """Environment (which .env feeds into), then this model's DPAPI slot.
 
-    Placeholder values are skipped rather than returned. Otherwise a half-filled
-    `.env` template would outrank a working sealed key and every request would 401
-    with no clue why.
+    Never log the result. Placeholder values are skipped rather than returned -
+    otherwise a half-filled `.env` template would outrank a working sealed key and
+    every request would 401 with no clue why.
     """
     candidate = os.environ.get("SQLAGENT_API_KEY", "")
     if candidate and not candidate.lower().startswith(("sk-your-key", "paste_", "placeholder")):
         return candidate
     try:
         from . import secrets  # Windows-only; lazy so the package imports elsewhere
-        return secrets.load() or ""
+        return secrets.load(model or None) or ""
     except (ImportError, OSError):
         return ""
 
@@ -169,10 +169,11 @@ def resolve_api_key() -> str:
 def settings_from_env(**overrides) -> Settings:
     load_env()
     kwargs: dict = {}
-    if key := resolve_api_key():
-        kwargs["api_key"] = key
+    # the model decides which credential slot to open, so resolve it first
     if os.environ.get("SQLAGENT_MODEL"):
         kwargs["model"] = os.environ["SQLAGENT_MODEL"]
+    if key := resolve_api_key(kwargs.get("model", "")):
+        kwargs["api_key"] = key
     if os.environ.get("SQLAGENT_BASE_URL"):
         kwargs["base_url"] = os.environ["SQLAGENT_BASE_URL"]
     if os.environ.get("SQLAGENT_PROVIDER"):

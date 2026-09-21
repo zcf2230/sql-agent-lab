@@ -31,8 +31,31 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BLOB_PATH = ROOT / "secrets" / "sqlagent.dpapi"
 DOTENV_PATH = ROOT / ".env"
+LEGACY_BLOB = ROOT / "secrets" / "sqlagent.dpapi"
+
+
+def dotenv_value(key: str) -> str:
+    """Read one non-secret field out of .env without importing config (no import cycle)."""
+    if not DOTENV_PATH.exists():
+        return ""
+    prefix = key + "="
+    for line in DOTENV_PATH.read_text(encoding="utf-8-sig").splitlines():
+        if line.startswith(prefix):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
+
+
+def blob_path(model: str | None = None) -> Path:
+    """One blob slot per model.
+
+    A second provider is the whole point of a cross-model comparison, and the first
+    implementation kept a single `sqlagent.dpapi` - sealing the Qwen key would have
+    silently destroyed the DeepSeek one. The slot is named after SQLAGENT_MODEL so no
+    new configuration key is needed to say which credential you mean.
+    """
+    name = (model or dotenv_value("SQLAGENT_MODEL") or "default").strip().lower().replace("-", "_")
+    return ROOT / "secrets" / f"sqlagent.{name}.dpapi"
 
 # Changing this string invalidates every stored blob (deliberate, not a bug).
 ENTROPY = b"sql-agent-lab:credential:v1"
@@ -92,16 +115,21 @@ def store(key: str) -> Path:
     key = key.strip()
     if not key:
         raise ValueError("refusing to store an empty key")
-    BLOB_PATH.parent.mkdir(exist_ok=True)
-    BLOB_PATH.write_bytes(protect(key.encode("utf-8")))
-    BLOB_PATH.chmod(0o600)
-    return BLOB_PATH
+    path = blob_path()
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(protect(key.encode("utf-8")))
+    path.chmod(0o600)
+    return path
 
 
-def load() -> str | None:
-    if not BLOB_PATH.exists():
+def load(model: str | None = None) -> str | None:
+    path = blob_path(model)
+    if not path.exists():
+        # one-time migration: the original single-slot blob belongs to deepseek-chat
+        if model in (None, "deepseek-chat") and LEGACY_BLOB.exists() and path != LEGACY_BLOB:
+            return unwrap(LEGACY_BLOB.read_bytes()).decode("utf-8")
         return None
-    return unwrap(BLOB_PATH.read_bytes()).decode("utf-8")
+    return unwrap(path.read_bytes()).decode("utf-8")
 
 
 def looks_placeholder(key: str) -> bool:
@@ -118,7 +146,7 @@ def looks_placeholder(key: str) -> bool:
 
 
 def migrate_from_dotenv(delete_source: bool = True) -> bool:
-    """Move a plaintext .env key into the DPAPI blob, then destroy the plaintext."""
+    """Move a plaintext .env key into this model's blob, then destroy the plaintext."""
     if not DOTENV_PATH.exists():
         return False
     key = None
@@ -138,7 +166,7 @@ def migrate_from_dotenv(delete_source: bool = True) -> bool:
     store(key)
     if delete_source:
         DOTENV_PATH.write_text(
-            "# key sealed into secrets/sqlagent.dpapi (Windows DPAPI: CurrentUser + entropy)\n"
+            "# key sealed into this model's slot under secrets/ (Windows DPAPI: CurrentUser + entropy)\n"
             "# To reseed: add  SQLAGENT_API_KEY=sk-...  below, close this file's editor,\n"
             "# then run:  python -m sqlagent.secrets   (it wipes the key back out of this file)\n"
             "# Never put the key on the command line - shells and crash reporters record it.\n"
@@ -156,11 +184,11 @@ def main() -> int:
         print("Refusing to take a key as an argument. Use: SQLAGENT_API_KEY=... python -m sqlagent.secrets")
         return 2
     if migrate_from_dotenv():
-        print(f"sealed into {BLOB_PATH.relative_to(ROOT)}; plaintext .env overwritten")
+        print(f"sealed into {blob_path().relative_to(ROOT)}; plaintext .env overwritten")
         return 0
     from_env = os.environ.get("SQLAGENT_API_KEY")
     if from_env:
-        print(f"sealed into {BLOB_PATH.relative_to(ROOT)}")
+        print(f"sealed into {blob_path().relative_to(ROOT)}")
         store(from_env)
         os.environ.pop("SQLAGENT_API_KEY")
         return 0
