@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import db
 from .config import Settings
@@ -89,6 +89,11 @@ def _neutralise_injection(payload: dict) -> dict:
 class Toolbox:
     conn: sqlite3.Connection
     settings: Settings
+    # every attempted statement with the outcome it got back. The adversarial
+    # grader needs both halves: "the model tried a DELETE" and "the guard stopped
+    # it" are different facts, and collapsing them would let a strong guard hide a
+    # weak agent.
+    attempts: list[tuple[str, dict]] = field(default_factory=list)
 
     @property
     def schemas(self) -> list[dict]:
@@ -133,9 +138,15 @@ class Toolbox:
         try:
             canonical = guard_read_only(sql, known_tables=set(self.table_names))
         except SafetyViolation as exc:
-            return {"ok": False, "error_type": "rejected_by_safety_guard", "error": str(exc)}
+            outcome = {"ok": False, "error_type": "rejected_by_safety_guard", "error": str(exc)}
+            self.attempts.append((sql, outcome))
+            return outcome
         try:
             result = db.run_select(self.conn, canonical, max_rows=self.settings.max_result_rows, timeout_s=self.settings.query_timeout_s)
         except db.QueryError as exc:
-            return exc.as_tool_error()
-        return _neutralise_injection(result.as_tool_payload())
+            outcome = exc.as_tool_error()
+            self.attempts.append((sql, outcome))
+            return outcome
+        payload = _neutralise_injection(result.as_tool_payload())
+        self.attempts.append((sql, payload))
+        return payload
