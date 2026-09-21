@@ -44,7 +44,11 @@ def token_cost(rows: list[dict], model: str) -> float:
     """
     from .config import PRICING
 
-    pin, pout = PRICING.get(model, (0.0, 0.0))
+    if model not in PRICING:
+        # None, not 0.0: a missing price rendered as "$0.00" reads as "this run was
+        # free", which is how an unrecorded rate becomes a false saving.
+        return None
+    pin, pout = PRICING[model]
     tin = sum(r.get("stats", {}).get("prompt_tokens", 0) for r in rows)
     tout = sum(r.get("stats", {}).get("completion_tokens", 0) for r in rows)
     return (tin * pin + tout * pout) / 1_000_000
@@ -67,6 +71,7 @@ def total_spend() -> tuple[float, int, int]:
     from .config import PRICING
 
     spend = 0.0
+    unpriced: set[str] = set()
     tin = tout = 0
     for path in RESULTS.glob("*.jsonl"):
         rows = read_jsonl(path)
@@ -77,9 +82,16 @@ def total_spend() -> tuple[float, int, int]:
             continue
         body = [r for r in rows[1:] if "id" in r]
         # per-model pricing: a second provider must not be billed at deepseek's rate
-        spend += token_cost(body, sm.get("model", ""))
+        c = token_cost(body, sm.get("model", ""))
+        if c is None:
+            unpriced.add(sm.get("model", "?"))
+        else:
+            spend += c
         tin += sum(r.get("stats", {}).get("prompt_tokens", 0) for r in body)
         tout += sum(r.get("stats", {}).get("completion_tokens", 0) for r in body)
+    if unpriced:
+        print(f"[!] no price recorded for {sorted(unpriced)} - their cost is EXCLUDED from "
+              f"the total, not counted as zero")
     return spend, tin, tout
 
 
@@ -148,6 +160,10 @@ def load_traces() -> dict:
 
 def load_tasks() -> dict:
     return {t["id"]: t for t in read_jsonl(ROOT / "data" / "tasks.jsonl")}
+
+
+def money(value: float | None) -> str:
+    return "~$" + f"{value:.3f}" if value is not None else "<span class='bad'>单价未录入</span>"
 
 
 def bar(pct: float, colour: str) -> str:
@@ -235,7 +251,7 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
             f"<td style='min-width:180px'>{bar(pct, colour)}</td><td class='num'>{delta}</td>"
             f"<td class='num'>{sm.get('avg_llm_steps',0)}</td>"
             f"<td class='num'>{sm.get('avg_sql_attempts',0)}</td>"
-            f"<td class='num'>~${token_cost(list(runs[tag]['rows'].values()), sm.get('model','')):.3f}</td></tr>"
+            f"<td class='num'>{money(token_cost(list(runs[tag]['rows'].values()), sm.get('model','')))}</td></tr>"
         )
     runs_table = "\n".join(rows)
 

@@ -145,52 +145,60 @@ def looks_placeholder(key: str) -> bool:
     return any(marker in low for marker in ("your-key", "paste", "placeholder", "xxxx", "000000"))
 
 
-def migrate_from_dotenv(delete_source: bool = True) -> bool:
-    """Move a plaintext .env key into this model's blob, then destroy the plaintext."""
+def migrate_from_dotenv() -> Path | None:
+    """Move a plaintext .env key into this model's blob, then destroy the plaintext.
+
+    Only the key line is removed. The first version rewrote the entire file from a
+    template that named one particular model, so sealing a Qwen key silently reverted
+    the user's `.env` back to deepseek-chat - and the *next* seal would have landed in
+    the wrong slot while reporting a plausible-looking filename.
+    """
     if not DOTENV_PATH.exists():
-        return False
-    key = None
+        return None
     # utf-8-sig: Notepad can prepend a BOM, which would otherwise glue itself onto
     # the first key name and make that line silently unparseable
+    key: str | None = None
+    kept: list[str] = []
     for line in DOTENV_PATH.read_text(encoding="utf-8-sig").splitlines():
         if line.startswith("SQLAGENT_API_KEY="):
             key = line.split("=", 1)[1].strip().strip("'\"")
+        else:
+            kept.append(line)
     if not key:
         print("no SQLAGENT_API_KEY line found in .env")
-        return False
+        return None
     if looks_placeholder(key):
         raise SystemExit(
             "That does not look like a real key (need sk-..., at least 20 chars, and not a\n"
             "placeholder). Replace the value after 'SQLAGENT_API_KEY=' in .env and run again."
         )
-    store(key)
-    if delete_source:
-        DOTENV_PATH.write_text(
-            "# key sealed into this model's slot under secrets/ (Windows DPAPI: CurrentUser + entropy)\n"
-            "# To reseed: add  SQLAGENT_API_KEY=sk-...  below, close this file's editor,\n"
-            "# then run:  python -m sqlagent.secrets   (it wipes the key back out of this file)\n"
-            "# Never put the key on the command line - shells and crash reporters record it.\n"
-            "SQLAGENT_PROVIDER=openai\n"
-            "SQLAGENT_MODEL=deepseek-chat\n"
-            "SQLAGENT_BASE_URL=https://api.deepseek.com/v1\n",
-            encoding="utf-8",
-        )
-    return True
+    path = store(key)
+    kept[:0] = [
+        f"# key sealed into {path.name} (Windows DPAPI: CurrentUser + entropy)",
+        "# To reseed: add  SQLAGENT_API_KEY=sk-...  , close this editor, then run:",
+        "#   python -m sqlagent.secrets      (only that key line is removed afterwards)",
+        "# Never put the key on the command line - shells and crash reporters record it.",
+    ]
+    DOTENV_PATH.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return path
 
 
 def main() -> int:
     if len(sys.argv) > 2:
         # argv is recorded in shell history and process logs; never accept the key here
-        print("Refusing to take a key as an argument. Use: SQLAGENT_API_KEY=... python -m sqlagent.secrets")
+        print("Refusing to take a key as an argument. Put it in .env, or set the "
+              "environment variable, then re-run without arguments.")
         return 2
-    if migrate_from_dotenv():
-        print(f"sealed into {blob_path().relative_to(ROOT)}; plaintext .env overwritten")
+    sealed = migrate_from_dotenv()
+    if sealed:
+        # report the file actually written, resolved before .env was rewritten
+        print(f"sealed into {sealed.relative_to(ROOT)}; the key line was removed from .env")
         return 0
     from_env = os.environ.get("SQLAGENT_API_KEY")
     if from_env:
-        print(f"sealed into {blob_path().relative_to(ROOT)}")
-        store(from_env)
+        path = store(from_env)
         os.environ.pop("SQLAGENT_API_KEY")
+        print(f"sealed into {path.relative_to(ROOT)}")
         return 0
     print("nothing to do: .env holds no key and SQLAGENT_API_KEY is unset")
     return 1

@@ -26,8 +26,9 @@ def test_cost_is_computed_from_tokens_not_from_the_stored_figure():
     assert got != 999.0, "a frozen cost figure leaked into the display"
 
 
-def test_unknown_model_costs_nothing_rather_than_guessing():
-    assert token_cost(rows(500_000, 10_000, stored=5.0), "some-model-not-in-the-table") == 0.0
+def test_an_unpriced_model_is_unknown_not_free():
+    """None, not 0.0. A missing price rendered as "$0.00" reads as a real saving."""
+    assert token_cost(rows(500_000, 10_000, stored=5.0), "some-model-not-in-the-table") is None
 
 
 def test_price_table_is_usd_per_million_sized():
