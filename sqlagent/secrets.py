@@ -138,8 +138,10 @@ def migrate_from_dotenv(delete_source: bool = True) -> bool:
     store(key)
     if delete_source:
         DOTENV_PATH.write_text(
-            "# key moved to secrets/sqlagent.dpapi (Windows DPAPI, CurrentUser + entropy)\n"
-            "# reseed with:  python -m sqlagent.secrets  <<<or>>>  set SQLAGENT_API_KEY then run migrate\n"
+            "# key sealed into secrets/sqlagent.dpapi (Windows DPAPI: CurrentUser + entropy)\n"
+            "# To reseed: add  SQLAGENT_API_KEY=sk-...  below, close this file's editor,\n"
+            "# then run:  python -m sqlagent.secrets   (it wipes the key back out of this file)\n"
+            "# Never put the key on the command line - shells and crash reporters record it.\n"
             "SQLAGENT_PROVIDER=openai\n"
             "SQLAGENT_MODEL=deepseek-chat\n"
             "SQLAGENT_BASE_URL=https://api.deepseek.com/v1\n",

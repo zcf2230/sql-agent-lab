@@ -204,6 +204,12 @@ file in exchange for saving one editor trip. The key is accepted only from `.env
 environment, or an interactive prompt - never as an argument, since argv is recorded
 by process monitors and crash reporters.
 
+**Close the editor before sealing.** A window still holding the pre-sealing buffer
+writes the plaintext key straight back on its next save, and nothing will announce it:
+resolution prefers the sealed blob, so the project keeps working while `.env` quietly
+becomes secret-bearing again. `tests/test_secrets.py` scans the worktree and will catch
+it on the next run, which is the only reason this is survivable.
+
 Encrypting a key is not the same as it being secret. Anything that has ever been
 pasted into a chat window, a shell command line or a screenshot is compromised and
 must be rotated at the provider; no local storage scheme retroactively un-leaks it.
