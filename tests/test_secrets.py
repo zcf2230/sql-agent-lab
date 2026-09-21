@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 # Provider key shapes differ. DeepSeek is `sk-` + 32 hex; a DashScope (Qwen) key is
 # dotted, e.g. `sk-ws-xxx.yyy.zzz`. A regex written for one silently misses the other,
@@ -78,28 +79,58 @@ def test_sealing_only_removes_the_key_line(tmp_path, monkeypatch):
     """Regression: sealing used to rewrite .env from a template naming one model.
 
     Sealing a Qwen key therefore reverted the file to deepseek-chat, and the next
-    seal would have gone to the wrong slot while printing a filename that looked
-    like it had gone to the right one.
+    seal would have gone to the wrong slot while printing a filename that implied it
+    had not. Now only the key line is removed.
+
+    `ROOT` is redirected to a temp directory on purpose. An earlier version of this
+    test resolved the real slot path and unlinked it at the end, which deleted the
+    user's actual sealed credential. A test that writes into the live secrets store
+    is a data-loss bug waiting for its first green run.
     """
-    dotenv = tmp_path / ".env"
-    # built at runtime so this source file does not itself contain a key-shaped token
-    fake_key = "sk-" + "unit-test-value-" + "a7f3c9d2e1b4f5e6"
-    dotenv.write_text(
+    monkeypatch.setattr(secrets, "ROOT", tmp_path)
+    monkeypatch.setattr(secrets, "DOTENV_PATH", tmp_path / ".env")
+    (tmp_path / ".env").write_text(
         "SQLAGENT_PROVIDER=openai\nSQLAGENT_MODEL=qwen-flash\n"
-        "SQLAGENT_BASE_URL=https://example.invalid/v1\nSQLAGENT_API_KEY=" + fake_key + "\n",
+        "SQLAGENT_BASE_URL=https://example.invalid/v1\n"
+        "SQLAGENT_API_KEY=" + "sk-" + "unit-test-value-" + "a7f3c9d2e1b4f5e6" + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(secrets, "DOTENV_PATH", dotenv)
-    slot = secrets.blob_path("qwen-flash")
-    monkeypatch.setattr(secrets, "blob_path", lambda model=None: slot)
 
-    assert secrets.migrate_from_dotenv() == slot
+    assert secrets.migrate_from_dotenv() == tmp_path / "secrets" / "sqlagent.qwen_flash.dpapi"
 
-    text = dotenv.read_text(encoding="utf-8")
+    text = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "SQLAGENT_MODEL=qwen-flash" in text, "the active model must survive sealing"
     assert "SQLAGENT_BASE_URL=https://example.invalid/v1" in text, "non-secret config must survive"
     assert not [l for l in text.splitlines() if l.startswith("SQLAGENT_API_KEY=")], \
         "the plaintext assignment must be gone (a comment may still name the key)"
-    assert fake_key not in text
-    assert KEY_SHAPE.search(secrets.unwrap(slot.read_bytes()).decode()), "it must be the sealed key"
-    slot.unlink(missing_ok=True)
+
+    sealed = tmp_path / "secrets" / "sqlagent.qwen_flash.dpapi"
+    assert KEY_SHAPE.search(secrets.unwrap(sealed.read_bytes()).decode()), "it must be the sealed key"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")
+def test_no_test_writes_into_the_live_secrets_store():
+    """The guard for the mistake this file already made once.
+
+    An earlier version of the sealing test resolved the real slot path and deleted it
+    afterwards, destroying a user credential while reporting a clean pass. Any test
+    that can touch the live store must leave it byte-for-byte identical.
+    """
+    store = secrets.ROOT / "secrets"
+    before = {p.name: p.read_bytes() for p in store.glob("*.dpapi")}
+
+    # exercise the sealing path with the real ROOT, but a temp .env with no key
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        empty = Path(d) / ".env"
+        empty.write_text("SQLAGENT_PROVIDER=openai\nSQLAGENT_MODEL=qwen-flash\n", encoding="utf-8")
+        original = secrets.DOTENV_PATH
+        secrets.DOTENV_PATH = empty
+        try:
+            assert secrets.migrate_from_dotenv() is None  # no key present, nothing to do
+        finally:
+            secrets.DOTENV_PATH = original
+
+    after = {p.name: p.read_bytes() for p in store.glob("*.dpapi")}
+    assert after == before, f"live credential store changed during tests: {set(before) ^ set(after)}"
