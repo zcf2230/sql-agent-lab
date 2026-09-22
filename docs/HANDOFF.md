@@ -238,7 +238,7 @@ wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 |---|---|---|---|---|
 | ✅ | 1 | 统计量入库：`sqlagent/stats.py`（McNemar 精确检验 + Wilson CI + 噪声底，配对关系与文件名写死）→ `scripts/significance.py` 只是它的 CLI，`report.html` 与 `docs/figures` 共用同一份实现 | §4.3 的数字原本**只有手算** | ¥0 |
 | ✅ | 6 | README 配图：`python -m sqlagent.figures` 从 `results/` 生成三张 SVG（消融+CI+噪声底 / 判分器审计 / 单题证据链），不是截图 | 3 秒内让人看懂这是产品不是脚本 | ¥0 |
-| ◐ | 5 | 发布：`docs/ARTICLE.md` 可直发；仓库公开需要本人账号（见 §14 发布清单） | 招聘方点开的是链接和截图，不是代码 | ¥0 |
+| ✅◐ | 5 | 发布：仓库已公开 + Pages 报告已上线（§14.2 有两个地址）；**技术文章尚未发布** | 招聘方点开的是链接和截图，不是代码 | ¥0 |
 | ☐ | 2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
 | ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
 | ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
@@ -379,22 +379,24 @@ git rev-list --objects --all \
 #   LICENSE 第二行再 commit；push 之前改零代价。
 ```
 
-### 14.2 建库并推送（一次性，需要你的 GitHub 凭据）
+### 14.2 建库并推送（已完成 2026-09-22）
 
-仓库已建好（Public、空库、没勾自动 README——所以不会有冲突提交）：
-`https://github.com/zcf2230/sql-agent-lab`
+仓库已公开，Pages 已开启。**审阅者可以直接点，不需要本地环境**：
 
-```bash
-cd /c/Users/34264/Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab
-git remote add origin https://github.com/zcf2230/sql-agent-lab.git
-git branch -M main          # 本地分支原本叫 master，GitHub 默认分支叫 main
-git push -u origin main     # 会弹浏览器授权（Git Credential Manager），确认后自动继续
-```
+| 入口 | 地址 |
+|---|---|
+| 仓库 | `https://github.com/zcf2230/sql-agent-lab` |
+| 离线报告（渲染版，含 192 题逐条 trace 回放） | `https://zcf2230.github.io/sql-agent-lab/report.html` |
+| 三张图（生成物） | `…/main/docs/figures/{ablation,calibration,trace}.svg` |
 
-> 桌面交付包 `C:\Users\34264\Desktop\sql-agent-lab` 做了**同一次**邮箱重写，所以两边共有
-> 提交的 hash 仍然一致（`git rev-parse HEAD:README.md` 两边相同即可验证）。重写前的完整
-> `.git` 备份在 `…/4a73de0a/_git-backup-20260922/`——**里面有旧邮箱，不要放进任何会被公开的
-> 目录**，确认线上没问题后直接删掉即可。
+推送后的一致性验证方式——**不要抽样比文件，比树哈希**：git 是内容寻址的，
+`git ls-remote origin refs/heads/main` 得到的提交号与本地 `git rev-parse HEAD` 相同，
+就等价于"线上每个文件与本地逐字节相同"。用 `curl` 逐个下载比 md5 既慢又容易误判
+（本地工作树是 CRLF、raw 上是 LF，直接 `cmp` 必然"不一致"）。
+
+> 桌面交付包 `C:\Users\34264\Desktop\sql-agent-lab` 做了**同一次**作者邮箱重写，所以两边共有
+> 提交的 hash 仍然一致。重写前的完整 `.git` 备份在 `…/4a73de0a/_git-backup-20260922/`——
+> **里面有旧邮箱，不要放进任何会被公开的目录**，确认线上没问题后直接删掉。
 
 提交数与体积都不写在这里（写了就会过期）：`git rev-list --count HEAD`、
 `du -sh --exclude=runs --exclude=.venv --exclude=.git .`。量级是"几十次提交、约 10 MB"，
