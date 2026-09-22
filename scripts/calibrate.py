@@ -45,6 +45,37 @@ MODES = {
 PRESENTATION_ONLY = {"reorder_cols"}
 
 
+# Fields that record *how this machine ran the query*, not what the judge decided.
+# Left in, every re-run of this script rewrites all 192 rows of six tracked files
+# (wall-clock jitter) plus a `cached` flag that flips once the result cache is warm,
+# and a reviewer who follows HANDOFF §4.2 is left staring at 386-line diffs per file
+# with no way to tell "your judge changed behaviour" from "a clock ticked".
+# Stripping them makes the tracked artifact a record of judgement only.
+VOLATILE_ROW_FIELDS = (("stats", "wall_ms"), ("cached",))
+
+
+def _normalise(path: Path) -> None:
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        obj = json.loads(line)
+        if "_summary" not in obj:
+            for field in VOLATILE_ROW_FIELDS:
+                if len(field) == 1:
+                    obj.pop(field[0], None)
+                elif isinstance(obj.get(field[0]), dict):
+                    obj[field[0]].pop(field[1], None)
+        else:
+            # `model` here is whatever the ambient .env happened to say, and no model
+            # was called: this sweep drives the mock provider to exercise the *judge*.
+            # Left alone it reads as "calibrated on deepseek-chat", and it made the
+            # committed artifacts disagree with a re-run on a different default.
+            obj["_summary"]["model"] = "mock (judge under test; no model called)"
+        out.append(json.dumps(obj, ensure_ascii=False))
+    path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
+
+
 def run_mode(mode: str) -> dict:
     tag = f"calib-{mode}"
     cmd = [
@@ -56,14 +87,11 @@ def run_mode(mode: str) -> dict:
     if proc.returncode != 0:
         print(proc.stdout[-2000:], proc.stderr[-2000:])
         raise SystemExit(f"runner failed for corruption={mode}")
-    rows = []
-    for line in (RESULTS / f"{tag}.jsonl").read_text(encoding="utf-8").splitlines():
-        obj = json.loads(line)
-        if "_summary" in obj:
-            continue
-        rows.append(obj)
-    return {"rows": rows, "summary": json.loads(
-        (RESULTS / f"{tag}.jsonl").read_text(encoding="utf-8").splitlines()[0])["_summary"]}
+    path = RESULTS / f"{tag}.jsonl"
+    _normalise(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {"rows": [json.loads(l) for l in lines[1:] if l.strip()],
+        "summary": json.loads(lines[0])["_summary"]}
 
 
 def main() -> int:
