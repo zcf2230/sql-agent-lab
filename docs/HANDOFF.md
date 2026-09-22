@@ -360,11 +360,14 @@ git rev-list --objects --all \
   | while read -r sha path; do
       git cat-file blob "$sha" 2>/dev/null | grep -qE "sk-[A-Za-z0-9_-]{18,}" && echo "HIT $path"
     done | sort -u
-#   实测当天：命中只有 tests/test_secrets.py 的合成样本，和 report.html 里
-#   `task-` 前缀造成的假阳性（题号形如 `…-aggregate_count_001`，前三个字母被切出来
-#   正好落在 key 形状里）。逐条确认过，无真密钥。—— 这一条在改任何 .gitignore 之后要重跑。
-#   踩过的坑：**别把匹配串写进文档**。上一版这里举了那个假阳性的字面例子，于是
-#   本文件自己成了扫描器的第三个 HIT。
+#   实测会给出三个 HIT，**全部是假阳性**，逐条确认过：
+#     tests/test_secrets.py     —— 它本身就是"扫描器必须会报警"的测试，里面是合成样本
+#     report.html               —— 题号形如 `…-aggregate_count_001`，前缀被切出来正好落进形状里
+#     docs/HANDOFF.md           —— **是历史里的旧版本**：本文件曾把上面那个字面例子写进正文，
+#                                  于是它自己成了匹配串。改掉正文不会改掉已有提交的 blob。
+#   想只剩两个 HIT 就要重写历史（`filter-branch`），代价是把 §9 那张"我犯过的错"表
+#   的过程记录一起洗掉——不值得。**这一条在改任何 .gitignore 之后要重跑。**
+#   踩过的坑：**别把匹配串写进文档**，它会成为扫描器的第三个命中。
 
 # 关 3：许可证。没有 LICENSE 的公开仓库 = 默认全部权利保留，招聘方也会觉得不专业。
 #   MIT 最合适（宽松、几行）。加完 commit 再推。
