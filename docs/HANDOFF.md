@@ -4,7 +4,13 @@
 > 并知道哪些地方不该信。
 >
 > 项目所有者：一名大三学生（准备中国大厂算法/Agent 方向实习）。
-> 本文档生成于 2026-09-21，对应工作仓库 HEAD `00cbf08`（19 个 commit）。
+> 文档写于 2026-09-21。**不钉 commit 号或提交数**——它会随任何一次修订过期，
+> 而这个项目已经为"硬编码数字与数据脱节"付过代价。用下面两条自查当前状态：
+>
+> ```bash
+> git log --oneline | head -1     # 当前 HEAD
+> git rev-list --count HEAD       # 提交数
+> ```
 
 ---
 
@@ -42,7 +48,7 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 **代码几乎全部由 AI 编程助手（Qoder）实现，包括本项目全部基础设施。**作者的角色是：
 提出目标、审阅产出、跑实验、在追问下解释结论。
 
-这条必须写清楚，因为它是**可验证的**：`git log` 19 个 commit 里有 8 个的标题是"修掉我自己
+这条必须写清楚，因为它是**可验证的**：`git log --oneline` 里相当一部分提交的标题是"修掉我自己
 产出的假结论/假绿灯"（见 §9），提交者身份与过程记录都在仓库里。
 
 对审阅者的含义：**不要按"他手写了多少代码"来评这个作品**，要按"他能不能为每个数字辩护"来评。
@@ -86,8 +92,10 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 
 ### 两处副本
 
-- 工作目录（源真值）：`Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab`，19 commits
-- 交付包（桌面）：`Desktop/sql-agent-lab`，22 MB，**同样 19 commits，尾部两个 message 因入口文件名不同**
+- 工作目录（源真值）：`Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab`
+- 交付包（桌面）：`Desktop/sql-agent-lab`，约 22 MB，提交历史与工作目录同步；
+  两者的**入口说明文件名不同**（`docs/DELIVERY.md` vs `00-使用说明.md`），个别打包提交的 message 因此不一致
+- 交付包**不含 `.venv`**，复核前需按 §4.2 先建环境
 - 交付包**不含** `.env`、`secrets/`（DPAPI 绑定本机用户，拷走无意义且属凭据）
 
 ---
@@ -247,7 +255,7 @@ McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
 ## 11. 联系这份产出的方式
 
 ```bash
-git log --oneline                 # 19 条，含 8 条"修正我自己产出的假结论"
+git log --oneline                 # 相当比例的提交标题是"修正我自己产出的假结论"
 cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adherence）
 .venv/Scripts/python.exe -m pytest -q    # 82 passed
 ```
