@@ -360,9 +360,11 @@ git rev-list --objects --all \
   | while read -r sha path; do
       git cat-file blob "$sha" 2>/dev/null | grep -qE "sk-[A-Za-z0-9_-]{18,}" && echo "HIT $path"
     done | sort -u
-#   今天实测（31 个提交）：命中只有 tests/test_secrets.py 的合成样本，和 report.html 里
-#   `task-` 前缀造成的假阳性（`sk-aggregate_count_001` 实为 `...task-aggregate_count_001`）。
-#   逐条确认过，无真密钥。—— 这一条在改任何 .gitignore 之后要重跑。
+#   实测当天：命中只有 tests/test_secrets.py 的合成样本，和 report.html 里
+#   `task-` 前缀造成的假阳性（题号形如 `…-aggregate_count_001`，前三个字母被切出来
+#   正好落在 key 形状里）。逐条确认过，无真密钥。—— 这一条在改任何 .gitignore 之后要重跑。
+#   踩过的坑：**别把匹配串写进文档**。上一版这里举了那个假阳性的字面例子，于是
+#   本文件自己成了扫描器的第三个 HIT。
 
 # 关 3：许可证。没有 LICENSE 的公开仓库 = 默认全部权利保留，招聘方也会觉得不专业。
 #   MIT 最合适（宽松、几行）。加完 commit 再推。
@@ -379,7 +381,9 @@ git branch -M main
 git push -u origin main          # 这一步要你的凭据（PAT 或浏览器授权）
 ```
 
-31 个提交、约 11 MB（不含 `.venv`/`runs/`），推送正常。`runs/` 是 .gitignore 排除的
+提交数与体积都不写在这里（写了就会过期）：`git rev-list --count HEAD`、
+`du -sh --exclude=runs --exclude=.venv --exclude=.git .`。量级是"几十次提交、约 10 MB"，
+推送正常。`runs/` 是 .gitignore 排除的
 50 MB，故意不公开——`report.html`（已提交）内含同样的逐题 trace 回放。
 
 ### 14.3 公开后要做的两件对齐（5 分钟）
