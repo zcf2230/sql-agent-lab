@@ -124,23 +124,50 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 .venv/Scripts/python.exe -m sqlagent.figures        # 重画 README 三张图
 ```
 
-**预期输出（逐字对照用）**：
+**关键输出行（逐字照抄自实跑，不是转述）**。完整输出更长，这里只列可对照的行；
+若你的输出连这些行都对不上，请当成缺陷提出。
 
 ```
-build_tasks : wrote 192 tasks / by difficulty: easy 59, medium 70, hard 63
-              dropped 14 -> ambiguous_topk 10, vacuous_gold 4
-              value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
-pytest      : 95 passed            # 计数会随测试增加，以全绿为准
-calibrate   : OVERALL tested=750  false-accept=0  false-reject=0  100.0%
+$ python -m sqlagent.data.build_tasks        # 题库重建（固定种子）
+wrote 192 tasks -> data\tasks.jsonl
+by difficulty: {'easy': 59, 'medium': 70, 'hard': 63}
+dropped 14 -> data\tasks_dropped.jsonl
+  ambiguous_topk        10  ordering_limit-001, ordering_limit-002, ...
+  vacuous_gold           4  null_handling-009, having-005, subquery-004, subquery-005
+value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
+
+$ python -m pytest
+95 passed in 3.86s                           # ← 实际输出被 ===== 包裹；秒数会变；计数随测试增加
+
+$ python scripts/calibrate.py                # 判分器审计表格的最后一行
+OVERALL           750   750            0            0 100.0%
+
+$ python scripts/significance.py             # 显著性与噪声底，现算
+deepseek: 3-shot vs baseline              192  89.1%    93.2%  +4.2pp       88.8%-96.0%   11    3  0.0574  未达显著
+  最大两两差异 4 题 = 2.1pp  ← baseline-v2 vs baseline-v3
+
+$ python -m sqlagent.adversarial --seed-tasks
+wrote 26 probes -> data\tasks_adversarial.jsonl
+
+$ python -m sqlagent.figures
+wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 ```
 
 > 本次交付包已按此流程验证过：在全新虚拟环境里重建库与题库，产出的 `tasks.jsonl`
 > 与工作目录**逐字节相同**（`cmp` 无差异）。这一步是在证明"确定性"，不是证明"正确性"。
+> `python -m sqlagent.figures` 另外在**只 clone、没有 `runs/`** 的目录里跑过一次：
+> 前两张图照样重画，第三张打印跳过原因（`runs/` 出于体积不入库），不崩。
 
-### 4.3 核对统计量（作者手算过，代码未入库）
+### 4.3 核对统计量（已入库，`scripts/significance.py` 现算）
 
-审阅者若发现这里的数字与仓库不一致，**以你的计算为准并提出质疑**——目前
-McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
+统计逻辑在 `sqlagent/stats.py`：它是唯一实现，CLI、`report.html` 与
+`docs/figures/ablation.svg` 都读它——三处不可能各说一套。跑 §4.2 里那条
+`python scripts/significance.py` 就能对上一整张表。
+
+**哪份运行文件参与配对**也写死在 `stats.py` 里，并带了理由注释：`abl-baseline`
+故意**不**与 `abl2-3shot` 配对（它早于 few-shot 接线，配它就是跨代码版本比分数）。
+一位审阅者这样配，得到的是 p=0.092 而不是文档里的 0.057——这个清单就是这么来的。
+`tests/test_stats.py` 把下面三个 p 值钉住，锚点正是那位审阅者独立手算的结果。
 
 | 对比 | 修好 / 弄坏（配对不一致） | Δ | McNemar 双侧精确 p | Wilson 95% CI |
 |---|---|---:|---:|---|
@@ -366,9 +393,11 @@ git push -u origin main          # 这一步要你的凭据（PAT 或浏览器�
 ### 14.4 发文章（`docs/ARTICLE.md` 已是可发正文）
 
 1. 平台按招聘可见度：**掘金 / 知乎专栏** 优先（HR 会搜到），可同步博客园。
-2. ARTICLE.md 是纯 Markdown；表格与代码块可直接粘。三张图从 `docs/figures/*.svg` 拖入
-   ——部分平台不吃 SVG，先在浏览器打开截图成 PNG 再传，图里的数字仍由
-   `python -m sqlagent.figures` 现算，不会因此失真。
+2. ARTICLE.md 是纯 Markdown，已内嵌三张图（`figures/trace.svg` 在第一节末尾、
+   `calibration.svg` 在第三节末、`ablation.svg` 在第八节的表下面），路径是仓库相对路径，
+   在 GitHub 上直接能看。**发到掘金/知乎要把这三张图重新上传**：文中的图片路径是仓库
+   相对路径，离开仓库就不会解析（贴过去必然是坏图）。在浏览器里打开 `docs/figures/*.svg`
+   截图成 PNG 再传，图里的数字仍由 `python -m sqlagent.figures` 现算，不会因此失真。
 3. **结尾放仓库链接 + 一句"本文每个数字都能点开到 results/ 的逐题记录"**，这是文章的
    钩子，也是和同题材文章唯一的区别。
 4. 发完把文章 URL 回填到 `docs/RESUME.md` 项目行（"技术文章：<url>"），形成
