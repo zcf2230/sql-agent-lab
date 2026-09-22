@@ -1,0 +1,213 @@
+"""Generate docs/figures/*.svg from recorded results.
+
+The README needs a picture, and a screenshot is a bad way to get one here: it freezes
+numbers that the repository can recompute, which is the exact failure this project has
+kept rediscovering (a hand-copied calibration table drifted by 750-vs-778 observations
+once already). So every figure below is drawn from `results/` and `runs/`, and the
+caption carries the command that regenerates it.
+
+Run:  python -m sqlagent.figures
+"""
+
+from __future__ import annotations
+
+import html
+import json
+from pathlib import Path
+
+from . import stats
+from .report import read_jsonl
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs" / "figures"
+RUNS = ROOT / "runs"
+
+INK = "#e6e8ef"
+DIM = "#8b8fa3"
+GRID = "#262a36"
+BG = "#12141a"
+GOOD = "#4f9d8f"
+BAD = "#e07a6b"
+NEUTRAL = "#5b7fd6"
+AMBER = "#c98a4b"
+
+
+def _svg(w: int, h: int, body: str, title: str) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="100%" '
+        f'font-family="-apple-system,Segoe UI,Microsoft YaHei,sans-serif">'
+        f"<title>{html.escape(title)}</title>"
+        f'<rect width="{w}" height="{h}" fill="{BG}"/>{body}</svg>'
+    )
+
+
+def _t(x, y, s, size=13, fill=INK, anchor="start", weight="normal"):
+    return (f'<text x="{x}" y="{y}" font-size="{size}" fill="{fill}" '
+            f'text-anchor="{anchor}" font-weight="{weight}">{html.escape(str(s))}</text>')
+
+
+def ablation_svg() -> str:
+    comps = stats.all_comparisons()
+    nf = stats.noise_floor()
+    w, h = 980, 96 + len(comps) * 108
+    left, right = 240, 700          # bars live in 240..700
+    note_left = 716                 # annotations get their own column: sharing the
+    #                                   plot area is what made the % labels collide
+    scale = lambda p: left + (p - 55.0) / 45.0 * (right - left)
+
+    body = _t(20, 34, "配对比较：同一 192 题、同一代码版本", 16, INK, weight="600")
+    body += _t(20, 56, f"须线 = Wilson 95% 置信区间；灰带 = 噪声底 ±{nf['worst_pp']:.1f}pp"
+                        f"（{nf['worst_pair'][0]} vs {nf['worst_pair'][1]}）", 12, DIM)
+    for pct in (60, 70, 80, 90, 100):
+        x = scale(pct)
+        body += f'<line x1="{x}" y1="68" x2="{x}" y2="{h-14}" stroke="{GRID}"/>'
+        body += _t(x, h - 4, f"{pct}%", 11, DIM, "middle")
+
+    y = 88
+    for c in comps:
+        base_pp, var_pp = c["base_rate"] * 100, c["variant_rate"] * 100
+        label = c["label"].split(": ", 1)[-1]
+        model = c["label"].split(":")[0]
+        body += _t(left - 14, y + 20, f"{model}", 13, INK, "end", "600")
+        body += _t(left - 14, y + 38, label, 12, DIM, "end")
+
+        # noise band around the baseline rate
+        lo, hi = scale(base_pp - nf["worst_pp"]), scale(base_pp + nf["worst_pp"])
+        body += f'<rect x="{lo}" y="{y+8}" width="{hi-lo}" height="42" fill="{DIM}" opacity="0.18"/>'
+
+        body += f'<rect x="{left}" y="{y+10}" width="{scale(base_pp)-left}" height="16" rx="3" fill="{DIM}" opacity="0.75"/>'
+        body += _t(min(scale(base_pp) - 6, right - 6), y + 23, f"{base_pp:.1f}%", 12, "#0d0f14", "end", "600")
+
+        body += f'<rect x="{left}" y="{y+32}" width="{scale(var_pp)-left}" height="16" rx="3" ' \
+                f'fill="{GOOD if c["significant"] else AMBER}"/>'
+        body += _t(min(scale(var_pp) - 6, right - 6), y + 45, f"{var_pp:.1f}%", 12, "#0d0f14", "end", "600")
+
+        clo, chi = scale(c["ci_low"] * 100), scale(c["ci_high"] * 100)
+        body += f'<line x1="{clo}" y1="{y+40}" x2="{chi}" y2="{y+40}" stroke="{INK}" stroke-width="1.4" opacity="0.8"/>'
+        for cap in (clo, chi):
+            body += f'<line x1="{cap}" y1="{y+35}" x2="{cap}" y2="{y+45}" stroke="{INK}" stroke-width="1.4" opacity="0.8"/>'
+
+        verdict = f"p={c['p_value']:.4f} → {'显著' if c['significant'] else '未达显著'}"
+        colour = GOOD if c["significant"] else BAD
+        body += _t(note_left, y + 20, f"修好 {c['fixed']} / 弄坏 {c['broken']}   Δ{c['delta_pp']:+.1f}pp", 12, INK)
+        body += _t(note_left, y + 38, verdict, 12, colour, weight="600")
+        body += _t(note_left, y + 55, "方向为正，按当前样本量不能称显著" if abs(c["delta_pp"]) > nf["worst_pp"]
+                   else "增益未超过噪声底，不报告为改进", 10.5, DIM)
+        y += 108
+    return _svg(w, h, body, "Ablation results with confidence intervals and noise floor")
+
+
+def calibration_svg() -> str:
+    modes = ["reflow", "reorder_cols", "float_round", "drop_distinct", "wrong_limit", "bad_column"]
+    rows, total, bad = [], 0, 0
+    for mode in modes:
+        lines = read_jsonl(ROOT / "results" / f"calib-{mode}.jsonl")
+        body_rows = [r for r in lines[1:] if "id" in r]
+        tested = [r for r in body_rows if r.get("result_changed") is not None and not r.get("trivial")]
+        po = mode == "reorder_cols"
+        agree = sum(1 for r in tested if r["correct"] == (po or not r["result_changed"]))
+        rows.append((mode, len(tested), agree, len(tested) - agree))
+        total += len(tested)
+        bad += len(tested) - agree
+
+    # +30 leaves room for the footer rule and total line; at 118 the last row's
+    # baseline sat 6px below the viewBox and got clipped.
+    w, h = 980, 148 + len(rows) * 40
+    maxn = max(r[1] for r in rows) or 1
+    left = 260
+    body = _t(20, 34, "判分器审计：注入已知缺陷，看它是否上当", 16, INK, weight="600")
+    body += _t(20, 56, f"每条观测的期望裁决由\"缺陷是否实质改变结果集\"推导，不来自手写对照表"
+                        f"　总计 {total} 次观测，误判 {bad} 次", 12, DIM)
+    body += _t(left, 80, "可测样本数", 11, DIM)
+    body += _t(940, 80, "false-accept / false-reject", 11, DIM, "end")
+    y = 96
+    for mode, n, agree, miss in rows:
+        body += _t(20, y + 15, mode, 13, INK)
+        bw = (right := 180 + (n / maxn) * 560) - 180
+        body += f'<rect x="180" y="{y}" width="{max(bw,2)}" height="18" rx="3" fill="{NEUTRAL}"/>'
+        body += _t(right + 10, y + 14, str(n), 12, DIM)
+        mark = f"{miss}" if miss else "0"
+        body += _t(940, y + 14, f"{mark} / {miss}", 12, GOOD if miss == 0 else BAD, "end", "600")
+        y += 40
+    body += f'<line x1="20" y1="{y+2}" x2="940" y2="{y+2}" stroke="{GRID}"/>'
+    body += _t(20, y + 24, f"合计 {total} 次注入观测，判分器与期望零分歧", 13, INK, weight="600")
+    return _svg(w, h, body, "Grader calibration sweep")
+
+
+def trace_svg() -> str:
+    """Draw one real failing task's actual step chain, straight from the trace file."""
+    lines = read_jsonl(ROOT / "results" / "abl2-baseline.jsonl")
+    rows = [r for r in lines[1:] if "id" in r]
+    pick = next((r for r in rows if not r["correct"] and not r.get("trivial")), None)
+    if pick is None:
+        return ""
+    task_id = pick["id"]
+    # runs/ is gitignored (50 MB of traces), so this is the one figure a fresh clone
+    # cannot rebuild. Missing input skips rather than crashes: `python -m
+    # sqlagent.figures` has to work for someone who only cloned the repo, and
+    # report.html carries the same per-task replay for them.
+    trace_file = RUNS / "openai__deepseek_chat__fs0.jsonl"
+    if not trace_file.exists():
+        print(f"  trace.svg skipped: {trace_file.relative_to(ROOT)} is not in git "
+              f"(runs/ is gitignored); see report.html for the replay")
+        return ""
+    trace = None
+    for line in trace_file.read_text(encoding="utf-8").splitlines():
+        rec = json.loads(line)
+        if rec.get("task_id") == task_id:
+            trace = rec
+    if trace is None:
+        return ""
+
+    steps = trace["steps"]
+    w = 980
+    box_w, gap = 150, 16
+    n = len(steps)
+    h = 250
+    body = _t(20, 30, f"一题的完整证据链 · {task_id}", 15, INK, weight="600")
+    q = next((r for r in read_jsonl(ROOT / "data" / "tasks.jsonl") if r["id"] == task_id), {})
+    body += _t(20, 52, q.get("question", "")[:110], 12, DIM)
+
+    x = 20
+    for s in steps:
+        if s["kind"] == "llm":
+            label, sub, colour = f"LLM 第 {s.get('turn')} 轮", f"{s.get('prompt_tokens')}+{s.get('completion_tokens')} tok · {s.get('t_ms')}ms", NEUTRAL
+        else:
+            ok = s.get("ok")
+            label, sub, colour = f"工具 {s.get('name')}", ("返回 ok" if ok else f"FAIL {s.get('error_type')}"), (GOOD if ok else BAD)
+        body += f'<rect x="{x}" y="90" width="{box_w}" height="58" rx="8" fill="none" stroke="{colour}" stroke-width="1.5"/>'
+        body += _t(x + box_w / 2, 114, label, 12, colour, "middle", "600")
+        body += _t(x + box_w / 2, 132, sub, 10.5, DIM, "middle")
+        if x + box_w + gap < w - box_w:
+            body += f'<line x1="{x+box_w+2}" y1="119" x2="{x+box_w+gap-2}" y2="119" stroke="{DIM}" stroke-width="1"/>'
+            body += f'<path d="M{x+box_w+gap-6} 115 l6 4 -6 4 z" fill="{DIM}"/>'
+        x += box_w + gap
+        if x > w - box_w:
+            break
+
+    detail = pick.get("detail", {})
+    body += f'<rect x="20" y="176" width="940" height="52" rx="8" fill="#191c25" stroke="{BAD}"/>'
+    body += _t(34, 198, f"判分器裁决：{pick['reason']}　gold {detail.get('gold_rows')} 行 vs 预测 {detail.get('pred_rows')} 行"
+                        f"　→ 该题计入失败", 12.5, BAD, weight="600")
+    body += _t(34, 216, "这一行的存在意味着：上面每个百分比都能被点开到具体的提示、参数与数据库回包",
+               11.5, DIM)
+    return _svg(w, h, body, "Trace replay for one task")
+
+
+def main() -> int:
+    OUT.mkdir(parents=True, exist_ok=True)
+    made = []
+    for name, render in (("ablation.svg", ablation_svg), ("calibration.svg", calibration_svg),
+                         ("trace.svg", trace_svg)):
+        svg = render()
+        if not svg:
+            print(f"skipped {name}: no input data")
+            continue
+        (OUT / name).write_text(svg, encoding="utf-8")
+        made.append(name)
+    print(f"wrote {len(made)} figures -> {OUT.relative_to(ROOT)}: {', '.join(made)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

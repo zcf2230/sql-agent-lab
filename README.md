@@ -50,6 +50,48 @@ question ─▶ ReAct loop ─▶ tools (schema / sample / execute) ─▶ SQL
                      calibration sweep audits the judge itself
 ```
 
+## The three numbers that matter
+
+All three figures are **generated from the recorded runs, not screenshotted**:
+
+```bash
+.venv/Scripts/python.exe -m sqlagent.figures   # rewrites docs/figures/*.svg
+```
+
+Figures 1 and 2 rebuild from `results/`, which is committed. Figure 3 reads `runs/` —
+50 MB of full traces, deliberately gitignored — so on a fresh clone it skips with that
+reason printed, and `report.html` (committed) carries the same per-task replay instead.
+
+A screenshot would freeze numbers this repository can recompute, which is the failure
+mode it keeps rediscovering (a hand-copied calibration table once drifted to 750-vs-778
+observations). If a figure and a table disagree, that is a bug — please report it.
+
+### 1. Paired ablation, with the noise floor drawn in
+
+Wilson 95% intervals, the measured noise floor as a grey band, and the exact McNemar
+result per row. The headline row is **+4.2pp and *not* significant** (p=0.0574, 11
+tasks fixed / 3 broken); the third row is the same change on a different model, where
+the confound in [Cross-model](#cross-model-and-why-the-comparison-is-confounded) makes
+the number uninterpretable.
+
+![Paired ablation with confidence intervals and noise floor](docs/figures/ablation.svg)
+
+### 2. The judge auditing itself
+
+6 injected defect classes, 750 observations, and an expected verdict derived per
+observation from whether the defect materially changed the result set — not from a
+hand-written lookup table. **Zero disagreements** is the strongest claim in this repo,
+and it is the only one that does not depend on which model was called.
+
+![Grader calibration sweep](docs/figures/calibration.svg)
+
+### 3. Any percentage opens into its evidence chain
+
+One failing task, from prompt to tool arguments to the database's actual reply to the
+verdict. This is what makes the first two figures checkable rather than assertive.
+
+![Trace replay for one task](docs/figures/trace.svg)
+
 ## Quick start
 
 ```bash
@@ -57,7 +99,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons
-python -m pytest                        # 85 tests: judge, guard, loop, credentials, adversarial grader, stats
+python -m pytest                        # 95 tests: judge, guard, loop, credentials, adversarial grader, stats
 python scripts/calibrate.py             # audit the grader with injected defects
 python -m sqlagent.adversarial --seed-tasks  # write the 26 probes without running them
 python -m sqlagent.eval.runner --provider mock --corruption none --tag baseline
@@ -227,11 +269,14 @@ accuracy gain.** This is why the runner records `protocol_adherence` and
 `n_zero_tool_calls` next to pass@1: without them the table above reads as a clean
 model ranking.
 
-**Noise floor.** Three nominally identical baseline runs disagree on 2 of 192 tasks
-(1.0%). Temperature 0 does not make a model run reproducible, so no delta under
-2.1pp - the largest pairwise spread among the four same-config baselines - on this
-benchmark should be reported as an improvement. `python scripts/significance.py` prints
-the current spread; do not trust any threshold quoted in prose over it.
+**Noise floor.** Four nominally identical baseline runs exist, because the config
+digest changed twice mid-project for documented reasons. Their six pairwise
+disagreements span 1 to 4 of 192 tasks (0.5%–2.1%). Temperature 0 does not make a
+model run reproducible, so the rule is: **no delta smaller than the largest observed
+pairwise spread — currently 2.1pp — is reported as an improvement.** The threshold is
+computed from the runs, not remembered: `python scripts/significance.py` prints both
+the per-pair spreads and the threshold, and the grey band in the figure above *is* it.
+Prose loses against that output; if the two disagree, the output is right.
 
 ### A result that was really a bug
 
@@ -371,11 +416,17 @@ sqlagent/
   adversarial.py          # 26 probes that invite an out-of-scope action, graded on two axes
   data/build_db.py  data/build_tasks.py
   eval/scoring.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
-scripts/calibrate.py
+  stats.py                # owns McNemar/Wilson/noise floor + which runs are paired
+  figures.py              # renders docs/figures/*.svg out of results/ and runs/
+scripts/calibrate.py  scripts/significance.py
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
-  test_secrets.py  test_config.py  test_adversarial.py
+  test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
 data/tasks.jsonl        # 192 scored tasks
 data/tasks_dropped.jsonl# 14 candidates removed, each with a stated reason
+results/*.jsonl         # per-task verdicts for every run quoted in this README
+runs/*.jsonl            # full traces: prompt, tool args, DB replies, tokens
+docs/figures/*.svg      # generated by `python -m sqlagent.figures`, never edited by hand
 docs/INTERVIEW.md       # module-by-module walkthrough and probing questions
 docs/ARTICLE.md         # publishable write-up (zh) of the measurement story
+docs/HANDOFF.md         # reviewer entry point: claim -> evidence map, and what is NOT proven
 ```
