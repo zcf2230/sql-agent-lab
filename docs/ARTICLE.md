@@ -138,7 +138,8 @@ for turn in fewshot: messages.append(turn)    # 示例追加在最后 ← 错
 
 我用完全相同的配置跑了三次 baseline：**2/192 道题的判定翻了**（1.0%）。
 
-所以这个项目定了一条规矩：**小于约 1.5pp 的差异不叫改进。** 3-shot 的 +4.2pp
+所以这个项目定了一条规矩：**差异不大于同配置基线的最大两两差异（实测 2.1pp）就不叫改进。**
+这个数字由 `scripts/significance.py` 现算，不写在散文里——写死就会过期。3-shot 的 +4.2pp
 （净增 8 题）在带外，可以报；其他在带内的波动一律不写进结论。
 
 顺带一个更阴的工程问题：**缓存键必须包含数据集指纹和判分器源码摘要。** 题目 id
@@ -268,7 +269,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20 表，800 用户 / 22000 进度行，7 类陷阱
 python -m sqlagent.data.build_tasks     # 192 题 + 14 道被剔除并写明原因
-python -m pytest                        # 72 个测试
+python -m pytest                        # 85 个测试
 python scripts/calibrate.py             # 判分器校准：750 观测 / 0 false-accept
 python -m sqlagent.adversarial          # 26 条对抗探测
 python -m sqlagent.report               # -> report.html，离线单文件，可点开每条 trace

@@ -57,7 +57,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons
-python -m pytest                        # 72 tests: judge, guard, loop, credentials, adversarial grader
+python -m pytest                        # 85 tests: judge, guard, loop, credentials, adversarial grader, stats
 python scripts/calibrate.py             # audit the grader with injected defects
 python -m sqlagent.adversarial --seed-tasks  # write the 26 probes without running them
 python -m sqlagent.eval.runner --provider mock --corruption none --tag baseline
@@ -100,7 +100,8 @@ python -m sqlagent.eval.runner --provider openai --no-self-repair --tag ablation
 
 | piece | file | why it exists |
 |---|---|---|
-| ReAct loop | `sqlagent/agent.py` | bounded step budget; `final_sql` is taken from the last query that **actually executed**, never from prose |
+| ReAct loop | `sqlagent/agent.py` | bounded step budget; `final_sql` prefers the last query that **actually executed**; a prose-only answer is
+  still graded but flagged `stop_reason=no_sql_executed` and counted separately |
 | Safety guard | `sqlagent/safety.py` | allowlists read-only statement types, rejects stacked statements, blocks `sqlite_*` catalog access |
 | Execution layer | `sqlagent/db.py` | read-only URI connection, progress-handler deadline, hard row cap |
 | Tools | `sqlagent/tools.py` | `list_tables` / `get_schema` / `sample_values` / `run_sql`; flags injection-shaped text in results |
@@ -228,7 +229,9 @@ model ranking.
 
 **Noise floor.** Three nominally identical baseline runs disagree on 2 of 192 tasks
 (1.0%). Temperature 0 does not make a model run reproducible, so no delta under
-~1.5pp on this benchmark should be reported as an improvement.
+2.1pp - the largest pairwise spread among the four same-config baselines - on this
+benchmark should be reported as an improvement. `python scripts/significance.py` prints
+the current spread; do not trust any threshold quoted in prose over it.
 
 ### A result that was really a bug
 
@@ -324,6 +327,17 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 - The cross-model comparison is confounded by tool-protocol adherence (above). A fix
   exists - demonstrate the full tool trajectory, or force `tool_choice` - but it has
   not been measured, so "which model is better at Text-to-SQL" is still unanswered.
+- **Only 2 of 192 tasks enforce row order.** The policy is right (a tied top-k has no
+  correct sequence) but its coverage is ~1%, which means a model that returns the right
+  rows in the wrong order loses almost nothing here. Stated because it was previously
+  only implied.
+- **The allowlist had a depth hole a reviewer found**: `WITH d AS (DELETE FROM users)
+  SELECT * FROM d` has a SELECT root and passed. Nothing was harmed - SQLite rejects
+  DML-in-CTE and the connection is `mode=ro` - but the layer that advertised itself as
+  *the* check was not the layer that held. Now DML/DDL nodes are rejected at any depth
+  (`test_cte_wrapped_dml_is_rejected_at_any_depth`), and `test_write_node_list_has_not_
+  silently_rotted` guards the name list against a sqlglot rename, because a guard built
+  from `getattr(exp, name, None)` thins silently on upgrade.
 - `PRICING` holds three kinds of entry with different standing: `deepseek-chat` is
   back-solved from console billing, `qwen-flash` is a **blended** rate calibrated from
   CNY 1 over 1,897,639 tokens (97.3% input) and cannot separate input from output,
