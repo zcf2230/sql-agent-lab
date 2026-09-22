@@ -346,10 +346,13 @@ GitHub 账号。下面每条都是你复制即用的命令，以及**为什么**
 ```bash
 # 关 1：作者身份会公开。git log 里的邮箱是仓库身份，不是账号邮箱。
 git log --format='%an <%ae>' | sort -u
-#   现在是 chaofanzhao484-creator <chaofanzhao484@gmail.com>
-#   不想公开 Gmail：改用 GitHub 的 noreply 地址重写：
-#   git -c user.name=... -c user.email=<ID>+<user>@users.noreply.github.com \
-#       filter-branch --env-filter '...
+#   ✅ 已做（2026-09-22，push 之前）：38 个提交的作者/提交者邮箱全部重写为
+#   GitHub 的 noreply 地址。验证方式（三条都过了）：
+#     git log --all --format='%ae %ce' | grep -c gmail   -> 0
+#     git rev-parse HEAD^{tree}  重写前后同一个 hash    -> 文件内容一个字节都没变
+#     git log --format='%s'      重写前后逐条相同        -> 提交信息全保留
+#   为什么必须在 push 前做：推出去之后再改要 force push，而且 GitHub 会缓存旧提交，
+#   旧邮箱在别人 fork 里永生。重写前备份了完整 .git。
 
 # 关 2：历史里每个 blob 扫一遍 key 形状。只看工作树不够——密钥可能进过早期提交。
 #   不要写 `git ls-files | xargs grep`：xargs 会把任何子进程的非零退出码折成 123，
@@ -367,22 +370,31 @@ git rev-list --objects --all \
 #                                  于是它自己成了匹配串。改掉正文不会改掉已有提交的 blob。
 #   想只剩两个 HIT 就要重写历史（`filter-branch`），代价是把 §9 那张"我犯过的错"表
 #   的过程记录一起洗掉——不值得。**这一条在改任何 .gitignore 之后要重跑。**
-#   踩过的坑：**别把匹配串写进文档**，它会成为扫描器的第三个命中。
+#   踩过的坑：**别把匹配串写进文档**，它会成为扫描器的第三个命中。当前正文里那个
+#   字面串已经删掉（`grep -c` = 0），但旧提交的 blob 还在历史里，所以第三个 HIT
+#   不会消失——区分方法就是这一句。
 
 # 关 3：许可证。没有 LICENSE 的公开仓库 = 默认全部权利保留，招聘方也会觉得不专业。
-#   MIT 最合适（宽松、几行）。加完 commit 再推。
+#   ✅ 已做：MIT，署名用 GitHub handle（`chaofanzhao484-creator`）。要换成真名只需改
+#   LICENSE 第二行再 commit；push 之前改零代价。
 ```
 
-### 14.2 建库并推送（一次性，需要你的 GitHub）
+### 14.2 建库并推送（一次性，需要你的 GitHub 凭据）
+
+仓库已建好（Public、空库、没勾自动 README——所以不会有冲突提交）：
+`https://github.com/chaofanzhao484-creator/sql-agent-lab`
 
 ```bash
-# A. 在 https://github.com/new 建空仓库（不要勾选自动 README / .gitignore / license，
-#    会制造冲突提交）。名字建议：sql-agent-lab。可见性：Public。
-# B. 回到本目录：
-git remote add origin https://github.com/<你的用户名>/sql-agent-lab.git
-git branch -M main
-git push -u origin main          # 这一步要你的凭据（PAT 或浏览器授权）
+cd /c/Users/34264/Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab
+git remote add origin https://github.com/chaofanzhao484-creator/sql-agent-lab.git
+git branch -M main          # 本地分支原本叫 master，GitHub 默认分支叫 main
+git push -u origin main     # 会弹浏览器授权（Git Credential Manager），确认后自动继续
 ```
+
+> 桌面交付包 `C:\Users\34264\Desktop\sql-agent-lab` 做了**同一次**邮箱重写，所以两边共有
+> 提交的 hash 仍然一致（`git rev-parse HEAD:README.md` 两边相同即可验证）。重写前的完整
+> `.git` 备份在 `…/4a73de0a/_git-backup-20260922/`——**里面有旧邮箱，不要放进任何会被公开的
+> 目录**，确认线上没问题后直接删掉即可。
 
 提交数与体积都不写在这里（写了就会过期）：`git rev-list --count HEAD`、
 `du -sh --exclude=runs --exclude=.venv --exclude=.git .`。量级是"几十次提交、约 10 MB"，
@@ -398,7 +410,7 @@ git push -u origin main          # 这一步要你的凭据（PAT 或浏览器�
 - **简历里的链接**：GitHub 会把仓库里的 `.html` 当**源码**显示，不会渲染。要让招聘方
   点开就是报告，开 GitHub Pages：仓库 Settings → Pages → Source = `Deploy from a
   branch`，Branch = `main` / `/ (root)`，保存。之后
-  `https://<你的用户名>.github.io/sql-agent-lab/report.html` 直接可看（`report.html`
+  `https://chaofanzhao484-creator.github.io/sql-agent-lab/report.html` 直接可看（`report.html`
   在根目录，所以不需要再动文件）。简历上放**两条**链接：仓库 + 这条报告直链。
 
 ### 14.4 发文章（`docs/ARTICLE.md` 已是可发正文）
