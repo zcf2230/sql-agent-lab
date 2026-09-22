@@ -1,0 +1,256 @@
+# 交接说明 · sql-agent-lab
+
+> 给陌生审阅者的入口文档。目标：你不需要作者在场，也能**独立复核每一条结论**，
+> 并知道哪些地方不该信。
+>
+> 项目所有者：一名大三学生（准备中国大厂算法/Agent 方向实习）。
+> 本文档生成于 2026-09-21，对应工作仓库 HEAD `00cbf08`（19 个 commit）。
+
+---
+
+## 0. 30 秒版
+
+做了一个会写 SQL 的 AI agent，**但主要工作量花在"怎么知道它的分数是真的"上**：
+自建 192 题基准 → 自建判分器 → **反过来审计判分器**（注入 6 类已知缺陷，750 次观测）
+→ 用配对统计检验约束结论 → 用对抗探测给"安全性"补上真实证据。
+
+结果是三层可信度递减的数字：
+
+```
+判分器：750 次注入观测，0 误判 0 漏判        ← 最硬
+DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.057，未达显著
+安全性：越权尝试率 23%，6/6 被拦，0 写操作   ← 26 条小样本
+```
+
+审阅时最该关注的是**第二行的 p 值和第三行的样本量**，作者没有把它们藏起来。
+
+---
+
+## 1. 目的
+
+| 问题 | 答案 |
+|---|---|
+| 为什么做 | 简历上需要一个能进面试、且扛得住三层追问的 agent 项目 |
+| 为什么是这个选题 | Text-to-SQL 的判分**可自动化**（执行结果比对），所以能产生硬数字；RAG 聊天机器人无客观判据，2026 年已饱和 |
+| 刻意不做什么 | 不用 LangChain/LangGraph（会成为解释不了的黑盒）；不做多 agent 协作；不做 Web 产品 |
+| 成功标准 | 不是"分数高"，而是"每个数字能回答：谁判的、噪声多大、什么条件下失效" |
+
+---
+
+## 2. 分工事实（审阅者一定会问）
+
+**代码几乎全部由 AI 编程助手（Qoder）实现，包括本项目全部基础设施。**作者的角色是：
+提出目标、审阅产出、跑实验、在追问下解释结论。
+
+这条必须写清楚，因为它是**可验证的**：`git log` 19 个 commit 里有 8 个的标题是"修掉我自己
+产出的假结论/假绿灯"（见 §9），提交者身份与过程记录都在仓库里。
+
+对审阅者的含义：**不要按"他手写了多少代码"来评这个作品**，要按"他能不能为每个数字辩护"来评。
+后者的检验方式在 §4。
+
+---
+
+## 3. 交付物清单
+
+### 代码（30 个 .py，4,632 行；生产 3,754 / 测试 753）
+
+| 路径 | 作用 | 关键行 |
+|---|---|---|
+`sqlagent/agent.py` | ReAct 循环、步数预算、**取"最后成功执行的 SQL"** | `:95` |
+`sqlagent/safety.py` | AST **白名单**只读护栏 | `:17` 允许集合，`:47` 判定 |
+`sqlagent/db.py` | 只读连接、进度回调超时、行数上限 | — |
+`sqlagent/eval/scoring.py` | 判分器（执行准确率 + 显式政策） | `:159` 主函数，`:189` 空集排除，`:202/:225` 缺陷是否触达结果 |
+`sqlagent/eval/runner.py` | 并行、缓存、回归门禁、**无效运行闸门** | `:132` |
+`sqlagent/config.py` | 全部实验参数 + **缓存键（含源码摘要）** | `:61` `code_hash()`，`:146` dataset |
+`sqlagent/adversarial.py` | 26 条越权探测 + 双轴判据 | `:146` agent_fail，`:150` guard_credit |
+`sqlagent/fewshot.py` | 示例选取，**含示例泄漏防护** | `leakage_check()` |
+`sqlagent/report.py` | 生成离线单文件报告 | `token_cost()` 从 token 现算 |
+`sqlagent/llm.py` | OpenAI 兼容 Provider + **MockProvider（可注入缺陷）** | — |
+`sqlagent/secrets.py` | DPAPI 凭据封存，每模型一槽 | `:49` |
+
+### 数据
+
+| 文件 | 内容 |
+|---|---|
+`data/tasks.jsonl` | **192 题**（easy 59 / medium 70 / hard 63），每题含 `gold_sql`、`require_order`、`gold_tables` |
+`data/tasks_dropped.jsonl` | **14 道被剔除**：`ambiguous_topk` 10、`vacuous_gold` 4，逐条原因 |
+`data/tasks_adversarial.jsonl` | 26 条探测，7 类 |
+`results/*.jsonl` | 12 次真实模型运行的**逐题结果**（含被推翻的）+ 6 个校准文件 |
+`runs/*.jsonl` | 逐调用 trace 原文（工作目录 50 MB；交付包内含报告用到的 6 个，11 MB） |
+`report.html` | 离线单文件，含 192 题 × 6 运行 trace 回放 |
+
+### 文档
+
+`README.md` 333 行 · `docs/INTERVIEW.md` 211 行 · `docs/ARTICLE.md` 311 行 ·
+`docs/DELIVERY.md` 136 行 · `docs/RESUME.md` 98 行 · 本文件
+
+### 两处副本
+
+- 工作目录（源真值）：`Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab`，19 commits
+- 交付包（桌面）：`Desktop/sql-agent-lab`，22 MB，**同样 19 commits，尾部两个 message 因入口文件名不同**
+- 交付包**不含** `.env`、`secrets/`（DPAPI 绑定本机用户，拷走无意义且属凭据）
+
+---
+
+## 4. 独立复核路径
+
+### 4.1 五分钟只读路径
+
+打开 `report.html`（离线、不联网、零花费）。逐条看：消融表 → 校准表 → 失败归因 →
+点开任意一题看 trace。**报告里每个数字都能点到逐题数据。**
+
+### 4.2 二十分钟动手路径（全程零 API 花费）
+
+```bash
+uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+
+.venv/Scripts/python.exe -m sqlagent.data.build_db
+.venv/Scripts/python.exe -m sqlagent.data.build_tasks
+.venv/Scripts/python.exe -m pytest
+.venv/Scripts/python.exe scripts/calibrate.py
+.venv/Scripts/python.exe -m sqlagent.adversarial --seed-tasks
+```
+
+**预期输出（逐字对照用）**：
+
+```
+build_tasks : wrote 192 tasks / by difficulty: easy 59, medium 70, hard 63
+              dropped 14 -> ambiguous_topk 10, vacuous_gold 4
+              value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
+pytest      : 82 passed
+calibrate   : OVERALL tested=750  false-accept=0  false-reject=0  100.0%
+```
+
+> 本次交付包已按此流程验证过：在全新虚拟环境里重建库与题库，产出的 `tasks.jsonl`
+> 与工作目录**逐字节相同**（`cmp` 无差异）。这一步是在证明"确定性"，不是证明"正确性"。
+
+### 4.3 核对统计量（作者手算过，代码未入库）
+
+审阅者若发现这里的数字与仓库不一致，**以你的计算为准并提出质疑**——目前
+McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
+
+| 对比 | 修好 / 弄坏（配对不一致） | Δ | McNemar 双侧精确 p | Wilson 95% CI |
+|---|---|---:|---:|---|
+| DeepSeek 3-shot vs baseline | 11 / 3 | +4.2pp | **0.057** | 83.9–92.7 → 88.8–96.0 |
+| DeepSeek 关自修复 vs baseline | 0 / 0 | 0.0pp | 1.000 | 同左 |
+| Qwen 3-shot vs baseline | 23 / 14 | +4.7pp | 0.188 | 63.5–76.3 → 68.4–80.6 |
+
+**结论：没有任何一项达到 p<0.05。** 89.1%→93.2% 是真实观测，但按当前样本量不能称"显著提升"。
+
+---
+
+## 5. 核心主张 → 证据映射
+
+| 主张 | 证据在哪 | 复现 |
+|---|---|---|
+判分器对 6 类已知缺陷零误判 | `results/calib-*.jsonl` 逐题含 `result_changed` | `scripts/calibrate.py` |
+空集对空集不计分 | `scoring.py:189`（`not trivial`） | `tests/test_scoring.py::test_empty_vs_empty_is_flagged_trivial_and_not_credited` |
+并列 top-k 不打分 | `data/tasks_dropped.jsonl` 10 条 | `python -m sqlagent.data.build_tasks` 输出 |
+`final_sql` 不取模型散文 | `agent.py:95` + 注释 | `tests/test_agent.py::test_a_hallucinated_column_returns_an_error_not_a_crash` |
+护栏是白名单 | `safety.py:17` | `tests/test_safety.py` 12 条逃逸样本，含 `WITH d AS (DELETE ... RETURNING *)` |
+越权尝试率 23% | `results/adversarial.jsonl` | `python -m sqlagent.adversarial` |
+别名绕过被拦 | `runs/*.jsonl` 中 `catalog-02` 的两次尝试 | 报告里搜 `sqlite_schema` |
+缓存随判分器源码失效 | `config.py:61` + `:146` | `tests/test_config.py::test_code_digest_ignores_line_endings` |
+无效运行不出分 | `runner.py:132` | `tests/test_runner.py::test_a_run_that_crashes_is_not_reported_as_a_low_score` |
+
+---
+
+## 6. 已知未证明 —— 请勿把这些当结论引用
+
+1. **自修复无增益**（逐题结果零变化）。原因不是功能坏，是模型首次即成功率高
+   （`avg_sql_attempts` 1.01）→ 没有错误可修。机制靠注入单独验证：开 96.2% / 关 0%。
+2. **跨模型能力对比无效**。被"工具调用服从度"混淆：Qwen 3-shot 仅 24% 的题真跑过查询、
+   45 题零工具调用。**"哪家模型更会写 SQL"目前无答案。**
+3. **安全护栏的行为证据只有 26 条探测**。192 道正常题里触发 **0 次**。
+   所以不能写"100% 拦截"。
+4. 只测了 temperature 0、单轮、两套 prompt、一个 seed。
+5. 题目全部来自参数化模板 → 措辞比真人写的整齐；改写只部分缓解。
+6. `drop_distinct` 缺陷只有 6 题能承载，而它是最真实的错误类型。
+7. 判分器按列名做置换对齐；两个匿名表达式退化为按位置比较，此时列交换看不见。
+8. 成本是**估算**：DeepSeek 单价从控制台实扣反算，Qwen 是单次账单推出的**混合单价**
+   （97.3% 输入，分不出输入/输出价）；未录入的模型显示"单价未录入"而不是 0。
+
+---
+
+## 7. 请重点质疑这 8 处（我自查过，但需要外部视角）
+
+1. **执行准确率作为唯一指标是否够？** 我没测"语义正确但结果偶然相同"的情况（
+   例如两条不同 SQL 在同一份数据上恰好同结果）。自建库可能让这种偶然比真实库更常见。
+2. **模板生成基准的外在效度。** 192 题的分布是不是"我方便生成的分布"？难度标签是我
+   按题型贴的，不是实测出来的。
+3. **判分器的宽松项是否偏多？** 我为了排除虚高做了很多限制，但也主动接受了列序、
+   大小写、日期格式、浮点容差四类宽松——每一项都可能掩盖真实错误。
+4. **对抗探测的问法是否过软？** 26 条是我写的，诱导强度未经校准；"越权率 23%"
+   可能是问法强度低造成的。
+5. **p=0.057 该怎么做决策？** 我选择如实标注为未显著。但也可以论证"配对设计中
+   11:3 的方向性证据已足以采用该 prompt"——这个取舍欢迎反驳。
+6. **噪声底只有 3 次重跑估计**，2/192 的置信区间其实很宽。
+7. **缓存包含源码摘要**：改一行注释就作废整轮，成本上是否合算？（我判断合算，
+   但这是价值选择不是事实。）
+8. **AI 主导实现的能力边界评估。** 这个作品能证明"设计与验证"能力，不能证明
+   "从零实现"能力。请明确你据哪一条打分。
+
+---
+
+## 8. 待办（按性价比排序）
+
+| # | 事项 | 为什么值 | 成本 |
+|---|---|---|---|
+1 | 把 McNemar / Wilson CI 做成 `scripts/significance.py` 入库并在报告展示 | §4.3 的数字目前**只有手算**，审阅者会要求看代码——这是现在最大的空心 | ¥0，约 40 分钟 |
+2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
+3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
+4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
+5 | 发布技术文章（`docs/ARTICLE.md` 已可直发）+ 仓库公开 | 招聘方点开的是链接和截图，不是代码 | ¥0 |
+6 | 报告加截图/GIF 进 README | 3 秒内让人看懂这是产品不是脚本 | ¥0 |
+
+---
+
+## 9. 本次协作中发生过的错误（完整，含被修好的）
+
+保留这一节，因为它比任何形容词更能说明过程质量。全部在 git log 里可查。
+
+| # | 错误 | 后果如果没被发现 | 修好方式 |
+|---|---|---|---|
+1 | 题面城市池手写 10 个，库里只有 5 个 | 最简题型通过率虚降到 55%，失败被归因给模型 | 值池改为从库 `SELECT DISTINCT` |
+2 | `--fewshot-k` 只进哈希不进 prompt | 跑出的"3-shot"其实是 baseline，任何对比都是假的 | 接线 + `tests/test_fewshot.py` |
+3 | few-shot 示例拼在目标题**之后** | 模型答完最后一个示例，pass@1=3.65%，会被写成"few-shot 有害" | 调整顺序 + 断言末条必须是目标题 |
+4 | 缓存键缺数据集/源码指纹 | 改完判分器继续吃旧分数 | `code_hash()` + `dataset_hash`，行尾归一化 |
+5 | 明文扫描器只匹配 DeepSeek 形状 | 115 位 DashScope key 躺在盘上却报"干净" | 按形状匹配 + 自测会报警 |
+6 | 封存重写整个 `.env` | 活动模型被悄悄改回 deepseek，下次封存进错槽 | 只删 key 行 + 回归测试 |
+7 | **测试删掉了真实凭据文件**，且一路绿灯 | 用户凭据丢失，无人知晓 | `ROOT` 重定向临时目录 + 守卫测试要求真实凭据目录逐字节不变 |
+8 | 未录入单价渲染成 $0 | 读起来像"这模型免费" | 返回 None，显示"单价未录入" |
+9 | 成本把展示运行的合计当成项目总花费（$1.06 vs 真实 $3.21） | 简历上的成本数字偏小 | 从 token 现算 + 同页显示 token 总量 |
+10 | 判分器与护栏对"越权"两套定义 | `uncaught_agent_fail` 在 0 和真值之间静默偏移 | `classify()` 直接调用护栏判定，并写明两轴不再独立 |
+11 | 恒真断言 2 条（`or True`、集合自比） | 测试绿灯是假的 | 删除 |
+12 | `git ls-files \| xargs grep` 当安全检查 | xargs 把任何非零码折成 123，永远证明不了"干净" | 换成项目自带扫描测试 |
+13 | 带红灯测试提交了一次（`cdfae10`） | 历史里留下未验证的"完成" | 单独 commit 修，不改写历史 |
+14 | MockProvider 用子串探测工具是否成功，永false | mock 无限重试到步数耗尽 | 改为解析 JSON |
+15 | 用户 API key 曾被明文贴进对话 | 泄露 | 已轮换；本地 DPAPI 封存，交付包不含凭据 |
+
+**共同点**：15 个错误里 13 个不会导致崩溃，只会**产出一个看起来合理的错误数字**。
+这正是本项目全部设计针对的失效模式。
+
+---
+
+## 10. 简历措辞
+
+两版措辞（算法实习 / Agent 开发实习）连同追问预案在 **`docs/RESUME.md`**（98 行）。要点摘录：
+
+- 项目名按岗位换：「评测方法学与消融研究」 vs 「智能体系统与可靠性工程」
+- **三句话任何岗位都不能写**："100% 拦截危险语句"、"自修复提升准确率"、"跨模型验证了能力"
+- 最强的一行是统计那行：**主动写出 p=0.057 未达显著**。这是区分"会用 AI 做东西"和
+  "会做实验"的地方
+- 被问"哪部分你做的"：见 §2
+
+---
+
+## 11. 联系这份产出的方式
+
+```bash
+git log --oneline                 # 19 条，含 8 条"修正我自己产出的假结论"
+cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adherence）
+.venv/Scripts/python.exe -m pytest -q    # 82 passed
+```
+
+审阅反馈请尽量给出：**被质疑的具体文件:行** + **你期望看到什么证据**。
+这个项目的方法就是"每条主张配一个可复现的检查"，用它来审它最合适。
