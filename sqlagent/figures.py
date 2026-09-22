@@ -60,7 +60,7 @@ def ablation_svg() -> str:
                         f"（{nf['worst_pair'][0]} vs {nf['worst_pair'][1]}）", 12, DIM)
     for pct in (60, 70, 80, 90, 100):
         x = scale(pct)
-        body += f'<line x1="{x}" y1="68" x2="{x}" y2="{h-14}" stroke="{GRID}"/>'
+        body += f'<line x1="{x}" y1="68" x2="{x}" y2="{h-22}" stroke="{GRID}"/>'
         body += _t(x, h - 4, f"{pct}%", 11, DIM, "middle")
 
     y = 88
@@ -80,7 +80,11 @@ def ablation_svg() -> str:
 
         body += f'<rect x="{left}" y="{y+32}" width="{scale(var_pp)-left}" height="16" rx="3" ' \
                 f'fill="{GOOD if c["significant"] else AMBER}"/>'
-        body += _t(min(scale(var_pp) - 6, right - 6), y + 45, f"{var_pp:.1f}%", 12, "#0d0f14", "end", "600")
+        # Label at the LEFT end of the variant bar: the whisker is the CI *of this
+        # value*, so it crosses the bar's right end by construction and struck
+        # through the percentage. Text-vs-text checks did not catch a line-vs-text
+        # collision; the geometry check now includes segments.
+        body += _t(left + 6, y + 45, f"{var_pp:.1f}%", 12, "#0d0f14", "start", "600")
 
         clo, chi = scale(c["ci_low"] * 100), scale(c["ci_high"] * 100)
         body += f'<line x1="{clo}" y1="{y+40}" x2="{chi}" y2="{y+40}" stroke="{INK}" stroke-width="1.4" opacity="0.8"/>'
