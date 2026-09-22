@@ -137,7 +137,7 @@ dropped 14 -> data\tasks_dropped.jsonl
 value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
 
 $ python -m pytest
-108 passed in 4.14s                          # ← 实际输出被 ===== 包裹；秒数与计数都会变
+117 passed in 4.62s                          # ← 实际输出被 ===== 包裹；秒数与计数都会变
 
 $ python scripts/calibrate.py                # 判分器审计表格的最后一行
 OVERALL           750   750            0            0 100.0%
@@ -298,7 +298,7 @@ wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 ```bash
 git log --oneline                 # 相当比例的提交标题是"修正我自己产出的假结论"
 cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adherence）
-.venv/Scripts/python.exe -m pytest     # 全绿（写作时 108 passed）
+.venv/Scripts/python.exe -m pytest     # 全绿（写作时 117 passed）
 ```
 
 审阅反馈请尽量给出：**被质疑的具体文件:行** + **你期望看到什么证据**。

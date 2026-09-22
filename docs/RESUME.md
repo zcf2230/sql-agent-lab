@@ -6,7 +6,7 @@
 
 ## 版本 A · 算法 / 大模型算法实习
 
-> **Text-to-SQL 智能体的评测方法学与消融研究**（独立项目 · Python · 108 个单元测试）
+> **Text-to-SQL 智能体的评测方法学与消融研究**（独立项目 · Python · 117 个单元测试）
 >
 > - 自建**可自动判分基准**：20 表业务库（800 用户 / 2.2 万行为记录）注入 7 类数据陷阱；
 >   192 道题由参数化模板生成，**每题 gold SQL 均实际执行校验**，题面所有过滤值由数据库
@@ -41,7 +41,7 @@
 ## 版本 B · Agent 应用 / 智能体开发实习
 
 > **Text-to-SQL 智能体系统与可靠性工程**（独立项目 · Python · DeepSeek / Qwen 双模型 ·
-> 5,262 行 / 108 个单元测试）
+> 5,361 行 / 117 个单元测试）
 >
 > - 实现 4 工具 **ReAct 循环**（`list_tables` / `get_schema` / `sample_values` / `run_sql`），
 >   带步数预算、终止条件与报错自修复；**`final_sql` 优先取"最后一条真正执行成功的查询"**，
@@ -96,9 +96,9 @@
 ## 投出去之前的三个检查
 
 ```bash
-.venv/Scripts/python.exe -m pytest             # 全绿（写作时 108 passed）
+.venv/Scripts/python.exe -m pytest             # 全绿（写作时 117 passed）
 .venv/Scripts/python.exe scripts/calibrate.py  # OVERALL 750 / 0 / 0
 # 简历上每个数字都能在 results/ 或 docs/HANDOFF.md §5 的映射表里找到出处
-# 行数声明核对（写作时 5,262 = sqlagent 4,106 + tests 964 + scripts 192）：
+# 行数声明核对（写作时 5,361 = sqlagent 4,110 + tests 1,059 + scripts 192）：
 find . -name '*.py' -not -path './.venv/*' -not -path './.git/*' | xargs wc -l | tail -1
 ```

@@ -421,6 +421,7 @@ sqlagent/
 scripts/calibrate.py  scripts/significance.py
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
   test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
+  test_figures.py         # the generated SVGs stay readable, not just valid XML
   test_artifacts.py       # the committed artifacts stay re-derivable and self-consistent
 data/tasks.jsonl        # 192 scored tasks
 data/tasks_dropped.jsonl# 14 candidates removed, each with a stated reason
