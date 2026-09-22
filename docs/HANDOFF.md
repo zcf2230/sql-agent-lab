@@ -88,7 +88,8 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 ### 文档
 
 `README.md` 333 行 · `docs/INTERVIEW.md` 211 行 · `docs/ARTICLE.md` 311 行 ·
-`docs/DELIVERY.md` 136 行 · `docs/RESUME.md` 98 行 · 本文件
+`docs/DELIVERY.md` · `docs/RESUME.md` 两版简历措辞 · `docs/REVIEW_TEMPLATE.md` **审阅反馈表（空白，供审阅者填写）** · 本文件
+（各文件行数不写死，用 `wc -l docs/*.md` 自查）
 
 ### 两处副本
 
@@ -254,7 +255,12 @@ McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
 
 ---
 
-## 11. 联系这份产出的方式
+## 11. 反馈方式
+
+**请填写 `docs/REVIEW_TEMPLATE.md`**（勾选为主，15-25 分钟）。最有价值的是它的
+§7「如果这个人坐在你对面，你会追问哪三个问题」——它会被直接当作面试题库使用。
+
+## 12. 自查仓库状态的命令
 
 ```bash
 git log --oneline                 # 相当比例的提交标题是"修正我自己产出的假结论"

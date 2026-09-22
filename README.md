@@ -6,6 +6,40 @@ The agent is the easy half. The part that actually decides whether any reported
 accuracy means anything is the judge, the trace, and the calibration sweep that
 audits the judge. This repo is built around that ordering.
 
+---
+
+## 给审阅者 / For reviewers
+
+**中文。约 15 分钟。** 完整说明与证据映射在 [`docs/HANDOFF.md`](docs/HANDOFF.md)，本节只是路径。
+
+1. **先读 `docs/HANDOFF.md` §0**（30 秒）——它给出三层递减的可信度：判分器最硬、
+   准确率次之、安全性样本最小。
+2. **不想动手**：打开根目录的 `report.html`（离线单文件，不需要 key、不产生花费）。
+   每个数字都能点到逐题数据。
+3. **想动手**（零 API 花费，约 5 分钟）：
+
+   ```bash
+   uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+   .venv/Scripts/python.exe -m sqlagent.data.build_db
+   .venv/Scripts/python.exe -m sqlagent.data.build_tasks
+   .venv/Scripts/python.exe -m pytest
+   .venv/Scripts/python.exe scripts/calibrate.py
+   ```
+
+   **预期输出写在 `docs/HANDOFF.md` §4.2**，可逐字对照。若对不上，请把它当缺陷提出。
+4. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7）。其中两处我自己认为最弱：
+   执行准确率作为唯一指标是否够；模板生成基准的难度标签是我贴的、不是实测的。
+5. **反馈请直接填 `docs/REVIEW_TEMPLATE.md`**（空白模板，勾选为主）。
+
+**评分口径提醒**：代码主要由 AI 编程助手实现（`docs/HANDOFF.md` §2 说明并给出验证方式）。
+**请不要按"手写了多少代码"评分**，请按"每个数字能否为它辩护"评分——后者是这份作品
+声称自己做的事，也是它可被检验的地方。
+
+**不要引用为结论的三件事**（作者自己列的，见 §6）：自修复有增益 · 跨模型能力已比较 ·
+护栏拦截率 100%。
+
+---
+
 ```
 question ─▶ ReAct loop ─▶ tools (schema / sample / execute) ─▶ SQL
                  │                 ▲
