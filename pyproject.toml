@@ -21,4 +21,6 @@ packages = ["sqlagent"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# -q would double up with a caller's own -q and print no "N passed" line, which is
+# the one thing a reviewer is asked to check against docs/HANDOFF.md verbatim.
+addopts = "-ra"

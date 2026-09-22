@@ -269,7 +269,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20 表，800 用户 / 22000 进度行，7 类陷阱
 python -m sqlagent.data.build_tasks     # 192 题 + 14 道被剔除并写明原因
-python -m pytest                        # 85 个测试
+python -m pytest                        # 95 个测试
 python scripts/calibrate.py             # 判分器校准：750 观测 / 0 false-accept
 python -m sqlagent.adversarial          # 26 条对抗探测
 python -m sqlagent.report               # -> report.html，离线单文件，可点开每条 trace

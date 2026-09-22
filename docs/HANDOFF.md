@@ -120,6 +120,8 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 .venv/Scripts/python.exe -m pytest
 .venv/Scripts/python.exe scripts/calibrate.py
 .venv/Scripts/python.exe -m sqlagent.adversarial --seed-tasks
+.venv/Scripts/python.exe scripts/significance.py    # p 值与噪声底，全部现算
+.venv/Scripts/python.exe -m sqlagent.figures        # 重画 README 三张图
 ```
 
 **预期输出（逐字对照用）**：
@@ -128,7 +130,7 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 build_tasks : wrote 192 tasks / by difficulty: easy 59, medium 70, hard 63
               dropped 14 -> ambiguous_topk 10, vacuous_gold 4
               value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
-pytest      : 82 passed
+pytest      : 95 passed            # 计数会随测试增加，以全绿为准
 calibrate   : OVERALL tested=750  false-accept=0  false-reject=0  100.0%
 ```
 
@@ -205,14 +207,14 @@ McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
 
 ## 8. 待办（按性价比排序）
 
-| # | 事项 | 为什么值 | 成本 |
-|---|---|---|---|
-1 | 把 McNemar / Wilson CI 做成 `scripts/significance.py` 入库并在报告展示 | §4.3 的数字目前**只有手算**，审阅者会要求看代码——这是现在最大的空心 | ¥0，约 40 分钟 |
-2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
-3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
-4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
-5 | 发布技术文章（`docs/ARTICLE.md` 已可直发）+ 仓库公开 | 招聘方点开的是链接和截图，不是代码 | ¥0 |
-6 | 报告加截图/GIF 进 README | 3 秒内让人看懂这是产品不是脚本 | ¥0 |
+| 状态 | # | 事项 | 为什么值 | 成本 |
+|---|---|---|---|---|
+| ✅ | 1 | 统计量入库：`sqlagent/stats.py`（McNemar 精确检验 + Wilson CI + 噪声底，配对关系与文件名写死）→ `scripts/significance.py` 只是它的 CLI，`report.html` 与 `docs/figures` 共用同一份实现 | §4.3 的数字原本**只有手算** | ¥0 |
+| ✅ | 6 | README 配图：`python -m sqlagent.figures` 从 `results/` 生成三张 SVG（消融+CI+噪声底 / 判分器审计 / 单题证据链），不是截图 | 3 秒内让人看懂这是产品不是脚本 | ¥0 |
+| ◐ | 5 | 发布：`docs/ARTICLE.md` 可直发；仓库公开需要本人账号（见 §14 发布清单） | 招聘方点开的是链接和截图，不是代码 | ¥0 |
+| ☐ | 2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
+| ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
+| ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
 
 ---
 
@@ -265,7 +267,7 @@ McNemar 与置信区间只存在于文档，见 §8 待办第 1 项。
 ```bash
 git log --oneline                 # 相当比例的提交标题是"修正我自己产出的假结论"
 cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adherence）
-.venv/Scripts/python.exe -m pytest -q    # 82 passed
+.venv/Scripts/python.exe -m pytest     # 全绿（写作时 95 passed）
 ```
 
 审阅反馈请尽量给出：**被质疑的具体文件:行** + **你期望看到什么证据**。
@@ -280,7 +282,7 @@ cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adhe
 
 | 审阅项 | 回应 | 证据 |
 |---|---|---|
-★ 统计量没入库（p 值只有手算） | **改。** 新增 `scripts/significance.py`：McNemar 精确检验 + Wilson CI，**文件名与配对关系写死在代码里**并注释了为何不用 `abl-baseline`（跨代码版本，配它会得到 p=0.092 而与文档不符） | 脚本输出逐字复现审阅者独立算出的 11/3→p=0.0574、23/14→0.1877、0/0→1.0 |
+★ 统计量没入库（p 值只有手算） | **改，并且做过了原方案。** 统计逻辑进 `sqlagent/stats.py`：McNemar 精确检验 + Wilson CI + 噪声底，**文件名与配对关系写死在代码里**并注释了为何不用 `abl-baseline`（跨代码版本，配它会得到 p=0.092 而与文档不符）。`scripts/significance.py` 退化成它的 CLI，`report.html` 与 `docs/figures/ablation.svg` 读同一份实现——三处不可能再各说一套 | 脚本输出逐字复现审阅者独立算出的 11/3→p=0.0574、23/14→0.1877、0/0→1.0；`tests/test_stats.py` 把这三个数钉住 |
 ★ 简历写"`final_sql` 永不取自散文"与 `agent.py:95` 的回退矛盾 | **改措辞，不改设计。** 设计可辩护（零执行的题会标 `stop_reason=no_sql_executed` 并单独计数），错的是全称否定句。已重写 `docs/RESUME.md` 开发版-1 与 `docs/INTERVIEW.md` §1，并把新口径写成卖点："回退会被标记和单独披露" | 审阅者指出的 45 道 Qwen 零工具题走回退计分，事实成立，已写进 README 限制段 |
 ★ README 写 72 个测试 | **改。** README 与 ARTICLE 同步为实测值 | `pytest` 实跑输出 |
 ★ `WITH d AS (DELETE FROM users) SELECT * FROM d` 能过 AST 白名单 | **改。** 白名单原先只看根节点 + INTO/RETURNING；现改为**任意深度**出现 DML/DDL 节点即拒绝，并补 2 条测试（含 `test_write_node_list_has_not_silently_rotted`，防 sqlglot 改名后 `getattr` 静默降级） | 修复前 INSERT/UPDATE/DELETE 三种无 RETURNING 变体全部放行（已实测），现全部拦截且 6 条合法读查询不误伤 |
@@ -300,3 +302,82 @@ cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adhe
 
 **尚未处理、留在待办的审阅建议**：接 Spider/BIRD 子集做外部可比性（审阅者判为"下一步
 建议，不构成本轮必改"，代价是判分政策需重做）；以及诱导强度校准后的对抗探测扩量。
+
+---
+
+## 14. 发布清单（把仓库变公开，以及把文章发出去）
+
+这一步**我做不了**：本工作区没有 `gh` CLI、没有配置 git remote，公开推送要用你本人的
+GitHub 账号。下面每条都是你复制即用的命令，以及**为什么**这一步不能跳。
+
+### 14.1 推之前必须过的三关（约 3 分钟，全部本地）
+
+```bash
+# 关 1：作者身份会公开。git log 里的邮箱是仓库身份，不是账号邮箱。
+git log --format='%an <%ae>' | sort -u
+#   现在是 chaofanzhao484-creator <chaofanzhao484@gmail.com>
+#   不想公开 Gmail：改用 GitHub 的 noreply 地址重写：
+#   git -c user.name=... -c user.email=<ID>+<user>@users.noreply.github.com \
+#       filter-branch --env-filter '...
+
+# 关 2：历史里每个 blob 扫一遍 key 形状。只看工作树不够——密钥可能进过早期提交。
+#   不要写 `git ls-files | xargs grep`：xargs 会把任何子进程的非零退出码折成 123，
+#   既不能证明"干净"也不能证明"有货"。逐个 blob 扫，命中就打路径：
+git rev-list --objects --all \
+  | git cat-file --batch-check='%(objecttype) %(objectname) %(rest)' \
+  | awk '$1=="blob" && length($3){print $2, $3}' \
+  | while read -r sha path; do
+      git cat-file blob "$sha" 2>/dev/null | grep -qE "sk-[A-Za-z0-9_-]{18,}" && echo "HIT $path"
+    done | sort -u
+#   今天实测（31 个提交）：命中只有 tests/test_secrets.py 的合成样本，和 report.html 里
+#   `task-` 前缀造成的假阳性（`sk-aggregate_count_001` 实为 `...task-aggregate_count_001`）。
+#   逐条确认过，无真密钥。—— 这一条在改任何 .gitignore 之后要重跑。
+
+# 关 3：许可证。没有 LICENSE 的公开仓库 = 默认全部权利保留，招聘方也会觉得不专业。
+#   MIT 最合适（宽松、几行）。加完 commit 再推。
+```
+
+### 14.2 建库并推送（一次性，需要你的 GitHub）
+
+```bash
+# A. 在 https://github.com/new 建空仓库（不要勾选自动 README / .gitignore / license，
+#    会制造冲突提交）。名字建议：sql-agent-lab。可见性：Public。
+# B. 回到本目录：
+git remote add origin https://github.com/<你的用户名>/sql-agent-lab.git
+git branch -M main
+git push -u origin main          # 这一步要你的凭据（PAT 或浏览器授权）
+```
+
+31 个提交、约 11 MB（不含 `.venv`/`runs/`），推送正常。`runs/` 是 .gitignore 排除的
+50 MB，故意不公开——`report.html`（已提交）内含同样的逐题 trace 回放。
+
+### 14.3 公开后要做的两件对齐（5 分钟）
+
+- GitHub 仓库 **About**：填一句 `Text-to-SQL agent + the measurement rig that decides
+  whether its numbers mean anything`，加 topics：`text-to-sql` `evaluation-harness`
+  `llm-evaluation` `agents`。**别**把主页描述写成准确率数字——README 顶部自己就说
+  那类数字要配 `valid`/`protocol_adherence` 一起读，一句话描述做不到。
+- **简历里的链接**：GitHub 会把仓库里的 `.html` 当**源码**显示，不会渲染。要让招聘方
+  点开就是报告，开 GitHub Pages：仓库 Settings → Pages → Source = `Deploy from a
+  branch`，Branch = `main` / `/ (root)`，保存。之后
+  `https://<你的用户名>.github.io/sql-agent-lab/report.html` 直接可看（`report.html`
+  在根目录，所以不需要再动文件）。简历上放**两条**链接：仓库 + 这条报告直链。
+
+### 14.4 发文章（`docs/ARTICLE.md` 已是可发正文）
+
+1. 平台按招聘可见度：**掘金 / 知乎专栏** 优先（HR 会搜到），可同步博客园。
+2. ARTICLE.md 是纯 Markdown；表格与代码块可直接粘。三张图从 `docs/figures/*.svg` 拖入
+   ——部分平台不吃 SVG，先在浏览器打开截图成 PNG 再传，图里的数字仍由
+   `python -m sqlagent.figures` 现算，不会因此失真。
+3. **结尾放仓库链接 + 一句"本文每个数字都能点开到 results/ 的逐题记录"**，这是文章的
+   钩子，也是和同题材文章唯一的区别。
+4. 发完把文章 URL 回填到 `docs/RESUME.md` 项目行（"技术文章：<url>"），形成
+   仓库 ↔ 文章 ↔ 简历 三向互链。
+
+### 14.5 发布**不改变**的三条底线（面试会拿这些试探你）
+
+- 公开 README/HANDOFF 已写明：自修复无增益、跨模型对比被混淆、安全只有 26 条探测——
+  **发布后这三条继续留在"未证明"，不要因为上了公开仓库就改口**。
+- 数字来自代码不来自本文：任何一处图/表/散文与 `scripts/significance.py`、
+  `scripts/calibrate.py` 现算输出不一致，以脚本为准，并当成 bug 提 issue。
+- 代码主要由 AI 实现这件事，`docs/HANDOFF.md` §2 已写在明面，公开后**不要弱化**。
