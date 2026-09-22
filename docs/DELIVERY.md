@@ -63,6 +63,23 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 已经做过的更强一次验证：在**全新虚拟环境**里装依赖 → 重建库 → 重新生成题库，产出的
 `tasks.jsonl` 与原目录**逐字节相同**。
 
+同步之后**按 blob 核对**，不要按"我以为复制对了"核对：
+
+```bash
+SRC=/c/Users/34264/Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab
+cd /c/Users/34264/Desktop/sql-agent-lab
+for f in $(git -C "$SRC" diff --name-only <上次镜像的提交>..HEAD); do
+  a=$(git -C "$SRC" rev-parse "HEAD:$f" 2>/dev/null); b=$(git rev-parse "HEAD:$f" 2>/dev/null)
+  [ "$a" = "$b" ] && echo "same   $f" || echo "DIFFER $f"
+done
+```
+
+为什么用 blob 而不是 `cmp`：`cp docs/x.md <目标目录>/` 只取**文件名**，于是
+`docs/HANDOFF.md` 会落到仓库根目录，而 `docs/` 里那份还是旧的——根目录多一个同名文件、
+子目录留一份过期副本。这个错真的犯过一次（提交 `Remove a duplicate HANDOFF.md I created
+at the bundle root`），`cmp` 逐文件比是查不出"多了一个文件"的，blob 对照加
+`git ls-files | grep -v /` 才能。
+
 ## 上传公开之前
 
 见 `docs/HANDOFF.md` §14。其中两条不要跳过：历史里每个 blob 都扫过 key 形状（干净），
