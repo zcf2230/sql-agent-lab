@@ -7,7 +7,7 @@
 - 体积与提交数：不写死。用 `du -sh .` 和 `git rev-list --count HEAD` 自查
   （交付包不含 `.venv`、`data/*.db`、`runs/cache/`，都可用 §4.2 的命令零成本重建）
 - 已验证：全新虚拟环境 → 装依赖 → 重建库 → 重新生成题库，产出与原目录**逐字节相同**；
-  82 个测试通过；报告可离线生成
+  85 个测试通过；报告可离线生成
 
 ---
 
@@ -29,7 +29,7 @@ VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 
 .venv/Scripts/python.exe -m sqlagent.data.build_db       # 建 20 表业务库
 .venv/Scripts/python.exe -m sqlagent.data.build_tasks    # 生成 192 题 + 剔除 14 题并说明原因
-.venv/Scripts/python.exe -m pytest                       # 82 个测试
+.venv/Scripts/python.exe -m pytest                       # 85 个测试
 .venv/Scripts/python.exe scripts/calibrate.py            # 判分器校准：750 次观测
 .venv/Scripts/python.exe -m sqlagent.report              # 重新生成 report.html
 ```
@@ -64,7 +64,7 @@ sqlagent/            ← agent 循环、护栏、判分器、runner、mock、tra
 data/                ← 题库 + 被剔除题目及原因
 results/             ← 每次运行的逐题结果（所有数字的出处）
 runs/                ← trace 原文（报告的数据源）
-tests/               ← 82 个测试
+tests/               ← 85 个测试
 ```
 
 **没有** `.env` 和 `secrets/`——凭据是 Windows DPAPI 加密并绑定当前用户/机器的，
@@ -111,7 +111,7 @@ tests/               ← 82 个测试
 
 ## 五、这个项目已经证明的 / 还没证明的
 
-**已证明**：判分器对 6 类已知缺陷零漏判；结果集比对政策明确且被 82 个测试锁定；
+**已证明**：判分器对 6 类已知缺陷零漏判；结果集比对政策明确且被 85 个测试锁定；
 护栏拦下 12 类语法逃逸 + 真实模型 6 次越权尝试；全流程零 key 可复现且字节级确定。
 
 **未证明（README 的 Known limitations 里逐条写着，别在面试里越界）**：
