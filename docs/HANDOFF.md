@@ -375,18 +375,18 @@ git rev-list --objects --all \
 #   不会消失——区分方法就是这一句。
 
 # 关 3：许可证。没有 LICENSE 的公开仓库 = 默认全部权利保留，招聘方也会觉得不专业。
-#   ✅ 已做：MIT，署名用 GitHub handle（`chaofanzhao484-creator`）。要换成真名只需改
+#   ✅ 已做：MIT，署名用 GitHub handle（`zcf2230`）。要换成真名只需改
 #   LICENSE 第二行再 commit；push 之前改零代价。
 ```
 
 ### 14.2 建库并推送（一次性，需要你的 GitHub 凭据）
 
 仓库已建好（Public、空库、没勾自动 README——所以不会有冲突提交）：
-`https://github.com/chaofanzhao484-creator/sql-agent-lab`
+`https://github.com/zcf2230/sql-agent-lab`
 
 ```bash
 cd /c/Users/34264/Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab
-git remote add origin https://github.com/chaofanzhao484-creator/sql-agent-lab.git
+git remote add origin https://github.com/zcf2230/sql-agent-lab.git
 git branch -M main          # 本地分支原本叫 master，GitHub 默认分支叫 main
 git push -u origin main     # 会弹浏览器授权（Git Credential Manager），确认后自动继续
 ```
@@ -410,7 +410,7 @@ git push -u origin main     # 会弹浏览器授权（Git Credential Manager）�
 - **简历里的链接**：GitHub 会把仓库里的 `.html` 当**源码**显示，不会渲染。要让招聘方
   点开就是报告，开 GitHub Pages：仓库 Settings → Pages → Source = `Deploy from a
   branch`，Branch = `main` / `/ (root)`，保存。之后
-  `https://chaofanzhao484-creator.github.io/sql-agent-lab/report.html` 直接可看（`report.html`
+  `https://zcf2230.github.io/sql-agent-lab/report.html` 直接可看（`report.html`
   在根目录，所以不需要再动文件）。简历上放**两条**链接：仓库 + 这条报告直链。
 
 ### 14.4 发文章（`docs/ARTICLE.md` 已是可发正文）
