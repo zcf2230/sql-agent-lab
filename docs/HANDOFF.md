@@ -137,7 +137,7 @@ dropped 14 -> data\tasks_dropped.jsonl
 value pools read from the database: 5 cities, 7 categories, 20 months, 3 levels
 
 $ python -m pytest
-95 passed in 3.86s                           # ← 实际输出被 ===== 包裹；秒数会变；计数随测试增加
+108 passed in 4.14s                          # ← 实际输出被 ===== 包裹；秒数与计数都会变
 
 $ python scripts/calibrate.py                # 判分器审计表格的最后一行
 OVERALL           750   750            0            0 100.0%
@@ -266,8 +266,12 @@ wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 13 | 带红灯测试提交了一次（`cdfae10`） | 历史里留下未验证的"完成" | 单独 commit 修，不改写历史 |
 14 | MockProvider 用子串探测工具是否成功，永false | mock 无限重试到步数耗尽 | 改为解析 JSON |
 15 | 用户 API key 曾被明文贴进对话 | 泄露 | 已轮换；本地 DPAPI 封存，交付包不含凭据 |
+16 | §4.2 号称"逐字对照"，实际是我转写的（`OVERALL tested=750 ...` 这行从未被打印过） | 审阅者对不上格式，学不到任何东西 | 换成实跑粘贴的原文行 |
+17 | 校准产物把 `wall_ms` 与 `cached` 写进受版本管理的文件 | 审阅者照 §4.2 跑一遍 `calibrate.py`，6 个文件各 386 行全红 diff，"判分器有没有变"反而看不出来 | 产物只留判断字段；`tests/test_artifacts.py` 钉住；并逐行证明 1,152 条判定零变化 |
+18 | 校准产物 `_summary.model` 记的是当时 `.env` 里的默认模型 | committed 产物写 deepseek-chat、重跑变 qwen-flash，**而这场扫描根本没调用任何模型** | 写死为 `mock (judge under test; no model called)` |
 
-**共同点**：15 个错误里 13 个不会导致崩溃，只会**产出一个看起来合理的错误数字**。
+**共同点**：18 个错误里 16 个不会导致崩溃，只会**产出一个看起来合理的错误数字**
+（或让一个本该能核对的产物变得无法核对）。
 这正是本项目全部设计针对的失效模式。
 
 ---
@@ -294,7 +298,7 @@ wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 ```bash
 git log --oneline                 # 相当比例的提交标题是"修正我自己产出的假结论"
 cat results/abl2-3shot.jsonl | head -1   # 汇总行（含 valid / protocol_adherence）
-.venv/Scripts/python.exe -m pytest     # 全绿（写作时 95 passed）
+.venv/Scripts/python.exe -m pytest     # 全绿（写作时 108 passed）
 ```
 
 审阅反馈请尽量给出：**被质疑的具体文件:行** + **你期望看到什么证据**。

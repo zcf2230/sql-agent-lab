@@ -99,7 +99,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons
-python -m pytest                        # 95 tests: judge, guard, loop, credentials, adversarial grader, stats
+python -m pytest                        # judge, guard, loop, credentials, adversarial grader, stats, artifacts
 python scripts/calibrate.py             # audit the grader with injected defects
 python -m sqlagent.adversarial --seed-tasks  # write the 26 probes without running them
 python -m sqlagent.eval.runner --provider mock --corruption none --tag baseline
@@ -421,6 +421,7 @@ sqlagent/
 scripts/calibrate.py  scripts/significance.py
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
   test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
+  test_artifacts.py       # the committed artifacts stay re-derivable and self-consistent
 data/tasks.jsonl        # 192 scored tasks
 data/tasks_dropped.jsonl# 14 candidates removed, each with a stated reason
 results/*.jsonl         # per-task verdicts for every run quoted in this README

@@ -290,7 +290,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20 表，800 用户 / 22000 进度行，7 类陷阱
 python -m sqlagent.data.build_tasks     # 192 题 + 14 道被剔除并写明原因
-python -m pytest                        # 95 个测试
+python -m pytest                        # 全绿；计数以输出为准
 python scripts/calibrate.py             # 判分器校准：750 观测 / 0 false-accept
 python scripts/significance.py          # p 值与噪声底，全部现算，不抄文档
 python -m sqlagent.figures              # -> docs/figures/*.svg（本文三张图的来源）
