@@ -93,10 +93,12 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 ### 两处副本
 
 - 工作目录（源真值）：`Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab`
-- 交付包（桌面）：`Desktop/sql-agent-lab`，约 22 MB，提交历史与工作目录同步；
+- 交付包（桌面）：`Desktop/sql-agent-lab`，提交历史与工作目录同步；体积与文件数
+  不写进文档（会随修订过期），用 `du -sh .` 和 `find . -path ./.git -prune -o -type f -print | wc -l` 自查；
   两者的**入口说明文件名不同**（`docs/DELIVERY.md` vs `00-使用说明.md`），个别打包提交的 message 因此不一致
 - 交付包**不含 `.venv`**，复核前需按 §4.2 先建环境
-- 交付包**不含** `.env`、`secrets/`（DPAPI 绑定本机用户，拷走无意义且属凭据）
+- 交付包**不含** `.env`、`secrets/`（DPAPI 绑定本机用户，拷走无意义且属凭据）、
+  `.venv`、`data/*.db`、`runs/cache/`（三者都可按 §4.2 零成本重建）
 
 ---
 
