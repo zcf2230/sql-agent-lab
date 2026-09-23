@@ -1,0 +1,55 @@
+# Why this file exists. Every "pytest is green" and "the published artifacts regenerate
+# byte-identically" claim in README and docs/ was verifiable only by cloning the repo and
+# building an environment first. Three external reviewers asked for exactly that and had to
+# take it on trust; §4.2 of docs/HANDOFF.md lists the commands, and this runs that same list
+# on a machine that has never seen my working directory.
+#
+# It deliberately does NOT regenerate report.html: that file embeds per-task traces from
+# runs/, which is gitignored, so a fresh clone cannot reproduce it and a red build would
+# be reporting a packaging choice rather than a defect. docs/figures/trace.svg skips for
+# the same reason and says so out loud.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: rebuild derived data the tests need
+        run: python -m sqlagent.data.build_db   # data/*.db is gitignored by design
+
+      - name: tests
+        run: python -m pytest -q
+
+      # The strongest step: the numbers in README and in the docs are re-derived from
+      # code and data, and the tree must still be clean afterwards. If a documented
+      # artifact no longer follows from the code that produces it, this fails - which is
+      # the class of bug this project kept rediscovering by hand.
+      - name: published artifacts must regenerate byte-identically
+        run: |
+          python -m sqlagent.data.build_tasks
+          python scripts/calibrate.py
+          python scripts/guard_corpus.py
+          python -m sqlagent.figures
+          git diff --exit-code
+
+      - name: show what a reviewer would see
+        if: always()
+        run: python scripts/significance.py
