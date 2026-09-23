@@ -29,7 +29,9 @@ audits the judge. This repo is built around that ordering.
    **预期输出写在 `docs/HANDOFF.md` §4.2**，可逐字对照。若对不上，请把它当缺陷提出。
 4. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7）。其中两处我自己认为最弱：
    执行准确率作为唯一指标是否够；模板生成基准的难度标签是我贴的、不是实测的。
-5. **反馈请直接填 `docs/REVIEW_TEMPLATE.md`**（空白模板，勾选为主）。
+5. **反馈请填表**：做过工程/评测的填 `docs/REVIEW_TEMPLATE.md`（勾选为主，15–25 分钟）；
+   不想碰命令行的填 `docs/REVIEW_TEMPLATE_NONTECH.md`（约 10 分钟，只需要"看不看得懂、
+   信不信"的判断）。
 
 **评分口径提醒**：代码主要由 AI 编程助手实现（`docs/HANDOFF.md` §2 说明并给出验证方式）。
 **请不要按"手写了多少代码"评分**，请按"每个数字能否为它辩护"评分——后者是这份作品
