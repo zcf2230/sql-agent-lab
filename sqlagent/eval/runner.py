@@ -36,6 +36,18 @@ RESULTS_DIR = ROOT / "results"
 _local = threading.local()
 
 
+def dataset_digest(path: Path) -> str:
+    """Content fingerprint of the task file, independent of line endings.
+
+    Newlines are normalised for the same reason `config.code_hash()` normalises them:
+    the digest must track dataset *content*. `build_tasks` writes text, and on Windows
+    that means CRLF, so an unchanged rebuild produced a different digest here, which
+    silently invalidated the whole result cache and rewrote `config_hash` in every
+    committed artifact - a one-line diff that read as "the judge changed".
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:8]
+
+
 def load_tasks(path: Path) -> list[dict]:
     tasks = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     for t in tasks:
@@ -220,7 +232,7 @@ def main() -> int:
 
     overrides = {"provider": args.provider, "model": args.model, "corruption": args.corruption}
     if args.tasks.exists():
-        overrides["dataset_hash"] = hashlib.sha256(args.tasks.read_bytes()).hexdigest()[:8]
+        overrides["dataset_hash"] = dataset_digest(args.tasks)
     if args.no_self_repair:
         overrides["self_repair"] = False
     if args.fewshot_k is not None:

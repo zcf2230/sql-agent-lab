@@ -207,7 +207,7 @@ def main() -> int:
         if not svg:
             print(f"skipped {name}: no input data")
             continue
-        (OUT / name).write_text(svg, encoding="utf-8")
+        (OUT / name).write_text(svg, encoding="utf-8", newline="\n")
         made.append(name)
     print(f"wrote {len(made)} figures -> {OUT.relative_to(ROOT)}: {', '.join(made)}")
     return 0

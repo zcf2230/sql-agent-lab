@@ -52,3 +52,21 @@ def test_the_healthy_path_is_valid():
     out = summarise(rows, Settings())
     assert out["valid"] is True and out["harness_exceptions"] == 0
     assert abs(out["pass_at_1"] - 0.75) < 1e-6
+
+
+def test_dataset_digest_ignores_line_endings(tmp_path):
+    """The second review's D1. `code_hash()` normalises newlines and explains why in its
+    docstring; `dataset_hash` did not, so rebuilding the task set on Windows (text mode
+    -> CRLF) changed the digest for zero behavioural reason. That invalidated the whole
+    result cache - contradicting the README's "a repeated run is free" - and rewrote
+    `config_hash` inside six committed artifacts, so "did the judge change?" could not
+    be answered by reading the diff the documented verification steps produce."""
+    from sqlagent.eval.runner import dataset_digest
+
+    body = '{"id": "a-001", "gold_sql": "SELECT 1"}\n{"id": "a-002", "gold_sql": "SELECT 2"}\n'
+    lf = tmp_path / "lf.jsonl"
+    crlf = tmp_path / "crlf.jsonl"
+    lf.write_bytes(body.encode("utf-8"))
+    crlf.write_bytes(body.replace("\n", "\r\n").encode("utf-8"))
+    assert lf.read_bytes() != crlf.read_bytes(), "the fixture must actually differ on disk"
+    assert dataset_digest(lf) == dataset_digest(crlf), "same content, different line endings, different digest"

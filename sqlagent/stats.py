@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -115,3 +116,68 @@ def noise_floor() -> dict:
     n = len(sets[BASELINES[-1]])
     return {"pairs": pairs, "worst_tasks": worst[0], "worst_pair": (worst[1], worst[2]),
             "worst_pp": worst[0] / n * 100, "n": n}
+
+
+# ---------------------------------------------------------------------------
+# Effective sample size: the assumption McNemar does not say out loud
+#
+# McNemar treats the 192 tasks as 192 independent paired observations. They are not:
+# the benchmark is template-generated, so `category_slice` is 5 SQL skeletons with 7
+# substitutions each and `date_bucket` is 3 skeletons, 20 of its 22 questions being one
+# skeleton with a different month. A model that can write that JOIN gets all of them;
+# one that cannot gets none. Verdicts are correlated inside a skeleton, which is exactly
+# what the test assumes away - so n=192 overstates the evidence, and the direction of the
+# error is the flattering one.
+#
+# Collapsing to skeletons is a defensible alternative, not the true n: it is also the
+# unit the generator was parameterised over. Both are reported because the choice of
+# aggregation moves p across 0.05, and a claim that survives only under one of two
+# reasonable aggregations is not a claim.
+# ---------------------------------------------------------------------------
+
+TASKS = ROOT / "data" / "tasks.jsonl"
+_LITERAL_STRING = re.compile(r"'[^']*'")
+_NUMBER = re.compile(r"\b\d+\b")
+_WS = re.compile(r"\s+")
+
+
+def skeleton(gold_sql: str) -> str:
+    """The gold SQL with every literal value removed: what varies between template instances."""
+    s = _LITERAL_STRING.sub("?", gold_sql)
+    s = _NUMBER.sub("#", s)
+    return _WS.sub(" ", s).strip().lower()
+
+
+def clusters(tasks_path: Path = TASKS) -> dict[tuple[str, str], list[str]]:
+    """(family, gold skeleton) -> task ids. The unit a template benchmark really samples."""
+    rows = [json.loads(l) for l in tasks_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    out: dict[tuple[str, str], list[str]] = {}
+    for r in rows:
+        tid = r["id"]
+        out.setdefault((tid.rsplit("-", 1)[0], skeleton(r["gold_sql"])), []).append(tid)
+    return out
+
+
+def cluster_sensitivity(base_tag: str, variant_tag: str,
+                        tasks_path: Path = TASKS) -> list[dict]:
+    """The same comparison under task-level and two cluster-level aggregations."""
+    base, variant = load_verdicts(base_tag), load_verdicts(variant_tag)
+    groups = clusters(tasks_path)
+    n_tasks = len(variant)
+
+    def row(label: str, a: dict, b: dict) -> dict:
+        n = len(b)
+        ka, kb = sum(a.values()), sum(b.values())
+        fixed, broken, p = mcnemar_exact(a, b)
+        return {"label": label, "n": n, "base_rate": ka / n, "variant_rate": kb / n,
+                "delta_pp": (kb - ka) / n * 100, "fixed": fixed, "broken": broken,
+                "p_value": p, "significant": p < 0.05}
+
+    task_level = {tid: (tid in base and base[tid]) for tid in variant}
+    out = [row("题级（McNemar 的默认口径）", task_level, {t: bool(variant[t]) for t in variant})]
+    for agg_name, agg in (("全对才算对", all), ("有一个对就算对", any)):
+        cb = {k: agg(bool(base.get(t)) for t in ts) for k, ts in groups.items()}
+        cv = {k: agg(bool(variant.get(t)) for t in ts) for k, ts in groups.items()}
+        out.append(row(f"簇级·{agg_name}（{len(groups)} 簇）", cb, cv))
+    out[0]["note"] = f"{n_tasks} 题去重后只有 {len(groups)} 个骨架"
+    return out

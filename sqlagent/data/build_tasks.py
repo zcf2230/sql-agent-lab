@@ -615,8 +615,8 @@ def main() -> None:
             })
 
     NL = chr(10)
-    OUT.write_text(NL.join(json.dumps(t, ensure_ascii=False) for t in tasks) + NL, encoding="utf-8")
-    DROPPED.write_text(NL.join(json.dumps(d, ensure_ascii=False) for d in dropped) + NL, encoding="utf-8")
+    OUT.write_text(NL.join(json.dumps(t, ensure_ascii=False) for t in tasks) + NL, encoding="utf-8", newline="\n")
+    DROPPED.write_text(NL.join(json.dumps(d, ensure_ascii=False) for d in dropped) + NL, encoding="utf-8", newline="\n")
 
     print(f"wrote {len(tasks)} tasks -> {OUT.relative_to(ROOT)}")
     by_cat: dict[str, int] = {}
