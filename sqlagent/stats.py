@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import re
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -181,3 +183,110 @@ def cluster_sensitivity(base_tag: str, variant_tag: str,
         out.append(row(f"簇级·{agg_name}（{len(groups)} 簇）", cb, cv))
     out[0]["note"] = f"{n_tasks} 题去重后只有 {len(groups)} 个骨架"
     return out
+
+
+def cluster_bootstrap(base_tag: str, variant_tag: str, iterations: int = 10_000,
+                      seed: int = 20260921) -> dict:
+    """Paired bootstrap CI for the cluster-level accuracy difference.
+
+    This exists because it is the only *positive* statement this data supports that
+    does not depend on picking a threshold or an aggregation: the p-values move across
+    0.05 depending on how the questions are grouped, so they cannot carry the claim -
+    but an interval on the mean per-template improvement can, and it is worth reporting
+    that the interval excludes zero while the sign test on the same clusters does not.
+    The two disagree because the difference distribution is wildly skewed (7 of the 12
+    non-zero clusters are single-question clusters that jump a whole 100pp), and a
+    report that showed only the favourable one would be cherry-picking by accident.
+
+    Deterministic: seeded, and resampling clusters (not questions), which is the whole
+    point of the exercise.
+    """
+    base, variant = load_verdicts(base_tag), load_verdicts(variant_tag)
+    groups = clusters()
+    rng = random.Random(seed)
+    keys = list(groups)
+    per_cluster = [
+        (sum(1 for t in groups[k] if variant[t]) / len(groups[k]),
+         sum(1 for t in groups[k] if base[t]) / len(groups[k]))
+        for k in keys
+    ]
+    n = len(per_cluster)
+    deltas = []
+    for _ in range(iterations):
+        s = 0.0
+        for _ in range(n):                     # sample with replacement, paired within a cluster
+            v, b = per_cluster[rng.randrange(n)]
+            s += v - b
+        deltas.append(s / n)
+    deltas.sort()
+    lo = deltas[int(0.025 * iterations)]
+    hi = deltas[int(0.975 * iterations)]
+    point = sum(v - b for v, b in per_cluster) / n
+    return {"point_pp": point * 100, "ci_low_pp": lo * 100, "ci_high_pp": hi * 100,
+            "excludes_zero": lo > 0 or hi < 0, "iterations": iterations, "clusters": n}
+
+
+def family_sensitivity(base_tag: str, variant_tag: str) -> list[dict]:
+    """The coarsest aggregation nobody can be accused of choosing: the 19 template
+    families, fixed in the generator before any model was called.
+
+    Reported because it is the one scale on which the effect vanishes cleanly
+    (one family changed, none reversed, p=1.0) - and the honest reading is not
+    "therefore nothing happened" but "the signal lives in two families, so describe
+    it as that rather than as a benchmark-wide improvement".
+    """
+    base, variant = load_verdicts(base_tag), load_verdicts(variant_tag)
+    out = []
+    for name, how in (("全对才算对", all), ("有一个对就算对", any)):
+        groups: dict[str, list[str]] = {}
+        for t in variant:
+            groups.setdefault(t.rsplit("-", 1)[0], []).append(t)
+        b = {k: how(bool(base.get(t)) for t in ts) for k, ts in groups.items()}
+        v = {k: how(bool(variant[t]) for t in ts) for k, ts in groups.items()}
+        n = len(v)
+        fixed, broken, p = mcnemar_exact(b, v)
+        out.append({"label": f"族级·{name}", "n": n,
+                    "base_rate": sum(b.values()) / n, "variant_rate": sum(v.values()) / n,
+                    "delta_pp": (sum(v.values()) - sum(b.values())) / n * 100,
+                    "fixed": fixed, "broken": broken, "p_value": p, "significant": p < 0.05})
+    return out
+
+
+def cluster_ratio_tests(base_tag: str, variant_tag: str) -> dict:
+    """Sign test and Wilcoxon on per-cluster accuracy *ratios*.
+
+    These exist because the all-or-nothing cluster aggregation is McNemar again - the
+    sign test and the paired test coincide on binary outcomes, so it adds no
+    independent evidence. Ratios keep the magnitude, and magnitude is where these two
+    disagree: the bootstrap interval excludes zero while the sign test does not reject.
+    That disagreement is the finding, not an inconvenience to average away.
+    """
+    base, variant = load_verdicts(base_tag), load_verdicts(variant_tag)
+    diffs = []
+    for _k, ts in clusters().items():
+        rb = sum(bool(base.get(t)) for t in ts) / len(ts)
+        rv = sum(bool(variant.get(t)) for t in ts) / len(ts)
+        if rv != rb:
+            diffs.append((rv - rb) * 100)
+    pos = sum(1 for x in diffs if x > 0)
+    neg = sum(1 for x in diffs if x < 0)
+    n = pos + neg
+    tail = sum(math.comb(n, i) for i in range(min(pos, neg) + 1)) / 2 ** n if n else 1.0
+    sign_p = min(1.0, 2 * tail)
+
+    vals = sorted(abs(x) for x in diffs)
+    def rank(v: float) -> float:
+        lo = vals.index(v)
+        hi = lo
+        while hi + 1 < len(vals) and vals[hi + 1] == v:
+            hi += 1
+        return (lo + 1 + hi + 1) / 2
+    w_pos = sum(rank(abs(x)) for x in diffs if x > 0)
+    tie = sum(t ** 3 - t for t in Counter(vals).values())
+    sd = math.sqrt(len(vals) * (len(vals) + 1) * (2 * len(vals) + 1) / 24 - tie / 48)
+    z = (w_pos - len(vals) * (len(vals) + 1) / 4) / sd if sd else 0.0
+    return {"nonzero_clusters": n, "up": pos, "down": neg, "sign_p": sign_p,
+            "wilcoxon_w": w_pos, "wilcoxon_z": z,
+            "wilcoxon_p": math.erfc(abs(z) / math.sqrt(2)),
+            "differences_pp": sorted(round(x, 1) for x in diffs),
+            "method_note": "Wilcoxon 用正态近似 + 结校正，未加连续性校正；加与不加会在 0.023/0.031 之间移动"}

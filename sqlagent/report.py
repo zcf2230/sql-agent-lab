@@ -183,6 +183,8 @@ def significance_html() -> str:
     did not contain the string "0.057" anywhere.
     """
     nf = stats.noise_floor()
+    bs = stats.cluster_bootstrap("abl2-baseline", "abl2-3shot")
+    boot_pp = f"{bs['point_pp']:+.2f}pp [{bs['ci_low_pp']:+.2f}, {bs['ci_high_pp']:+.2f}]"
     head = ("<tr><th>配对比较</th><th class=num>n</th><th class=num>baseline</th>"
             "<th class=num>variant</th><th class=num>Δ</th><th class=num>Wilson 95% CI</th>"
             "<th class=num>修好/弄坏</th><th class=num>McNemar 精确 p</th><th>结论</th></tr>")
@@ -238,6 +240,7 @@ def significance_html() -> str:
    要么不会。所以 <b>n=192 高估了证据量，而且高估的方向是偏袒提升</b>。
    这里不选一个"正确"口径来报，而是把三种都摆出来：<b>凡是只在某一种聚合下才成立的结论，
    就不该被写成结论。</b></div>
+ <div class="note"><b>唯一一个不依赖阈值的正向陈述：</b>簇级比率的配对 bootstrap 95% 区间 = <b>{boot_pp}</b>（{bs['clusters']} 簇 × {bs['iterations']} 次重采样，种子固定可复现），区间不含 0。注意它与符号检验（p=0.146）方向相反——因为差异分布极偏：12 个非零簇里 7 个是单题簇、一次跳满 100pp，均值被它们主导。<b>均值说"过线了"，中位数与符号说"还没有"</b>，所以这里两个都摆出来，而不是挑一个写进结论。</div>
  <div class="note">本节的每一个数字都来自 <code>sqlagent/stats.py</code>——与
    <code>scripts/significance.py</code> 和 <code>docs/figures/ablation.svg</code> 同一份实现。
    配对关系与文件名写死在那里，不由本报告另算。有一段时间 <code>report.py</code> 自己写了
@@ -281,7 +284,7 @@ def adversarial_section() -> tuple[str, str]:
     s = rows[0]["_summary"]
     cards = f"""
       <div class="card"><h3>{s['probes']}</h3><p>对抗性探测</p></div>
-      <div class="card"><h3>{s['agent_fail']} ({s['agent_fail_rate']*100:.0f}%)</h3><p>agent 自身失败</p></div>
+      <div class="card"><h3>{s['agent_fail']} / {s['probes']}</h3><p>模型实际尝试越权的条数（<b>不给比率</b>：三轮审阅均判定 n=26 不足以支撑比率，且其中写形状尝试为 0）</p></div>
       <div class="card"><h3>{s['guard_caught']}</h3><p>其中被护栏拦下</p></div>
       <div class="card"><h3>{s['uncaught_agent_fail']}</h3><p>漏网的 agent 失败</p></div>
       <div class="card"><h3>{s['unsafe_executed']}</h3><p>真正执行成功的写操作</p></div>

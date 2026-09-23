@@ -105,3 +105,31 @@ def test_allowlisted_reads_are_not_collateral_damage():
 def test_return_canonical_sql_is_reparsable():
     canonical = guard_read_only("select *   from   USERS", known_tables=KNOWN)
     assert guard_read_only(canonical, known_tables=KNOWN)
+
+
+def test_the_write_path_is_actually_tested_not_just_asked_about():
+    """The third review's §9-2: `guard_read_only` is a pure function of a string, so
+    the write path could always be tested without a model. It previously wasn't - the
+    only evidence was twelve hand-picked samples, and the one real hole in it was found
+    by a reviewer rather than by any of those twelve.
+
+    This runs the same corpus the script publishes. It is $0, deterministic, and covers
+    two directions: writes must not pass, and legitimate reads must not be blocked.
+    The second had never been measured at all, and is the likelier real defect -
+    an over-eager guard fails benchmark questions silently.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "guard_corpus.py"
+    proc = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    assert proc.returncode == 0, f"guard corpus failed:\n{proc.stdout}\n{proc.stderr}"
+    out = proc.stdout
+    assert "穿透率 0.00%" in out, out
+    assert "误拒   0" in out, out
+    assert "192 条" in out, "every gold query in the task set should be exercised"
+    # The distinction is the point: fail-closed rejections must not be counted as the
+    # allowlist working, so the report has to keep them in a separate bucket.
+    assert "UNPARSEABLE" in out and "fail-closed" in out

@@ -268,34 +268,63 @@ really SQL structural complexity, not measured hardness; and the buckets are lum
 
 ### How much of n=192 is really n=100
 
-McNemar treats the 192 tasks as 192 independent paired observations. The benchmark is
-template-generated, so it is not: **the 192 questions collapse to 100 distinct gold-SQL
-skeletons.** `category_slice` is 5 skeletons with 7 substitutions each; `date_bucket` has
-3 skeletons and 20 of its 22 questions are one skeleton with a different month;
-`filter_projection` is 10 questions over 2 skeletons. A model that can write that JOIN
-gets all seven; one that cannot gets none. Verdicts correlate inside a skeleton, which is
-exactly what the test assumes away - and the error runs in the direction that flatters
-the improvement.
+**First draft of this section, and what was wrong with it.** It argued that McNemar
+treats the 192 tasks as independent, that template-generated questions correlate inside a
+skeleton, and that this inflates the evidence. The first clause is true of the *test's*
+assumption; the reasoning is not. McNemar conditions on the **discordant pairs only** -
+what has to correlate for the test to be wrong is the *flips*, not the accuracy levels.
+So a reviewer checked that directly, and the flips do not cluster: the 14 discordant
+tasks land in 12 different skeletons, where 40,000 random reassignments give an expected
+12.3 (2.5–97.5%: 10–14), `P(≤12) = 0.54`. **The clustering argument for the paired test
+is not supported by the data.** The same reviewer computed an ICC-based "effective
+n≈139" and then withdrew it: under a permutation null the ICC's 95th percentile is 0.408
+against an observed 0.414, so on a 93% base rate ICC is simply not a reliable
+instrument here.
 
-Recomputing the same comparison at skeleton level, under both defensible aggregations:
+**The conclusion survives; the reason had to be replaced with a shorter one.** What
+actually makes a p-value the wrong summary is that **the aggregation function is a free
+parameter**, and different - each defensible - choices put the answer on opposite sides
+of 0.05:
 
-| aggregation | n | delta | fixed/broke | exact McNemar p |
+| aggregation | unit | delta | fixed/broke | p |
 |---|---:|---:|---:|---:|
 | per task (the table above) | 192 | +4.2pp | 11/3 | 0.0574 |
 | per skeleton, all-or-nothing | 100 | +5.0pp | 8/3 | 0.2266 |
-| per skeleton, any-instance-correct | 100 | +7.0pp | 8/1 | **0.0391** |
+| per skeleton, any-instance-correct | 100 | +7.0pp | 8/1 | 0.0391 |
+| per skeleton, sign test on cluster **ratios** | 12 non-zero | — | 9↑/3↓ | 0.1460 |
+| per skeleton, Wilcoxon signed rank on ratios | 12 non-zero | — | — | 0.0313 |
+| per **family** (19, fixed by the generator, nobody chooses it after the fact) | 19 | +5.26pp | 1/0 | 1.0000 |
 
-**p moves across 0.05 depending on an aggregation choice that is a modelling decision,
-not a fact.** So this project does not rest its conclusion on the significant /
-not-significant binary at all. It reports direction, effect size, intervals and the
-instability - because "p=0.057 therefore no effect" is as much an artifact as
+Two things worth stating plainly rather than burying:
+
+- **These are different estimands, not different calculations of one thing.** Per-task
+  answers "what happened on average to a question"; cluster-equal answers "what happened
+  to an average template". The claim in this README is about 192 questions, so the
+  per-task number is the headline - and the aggregations are sensitivity, not
+  alternatives to be picked for their appearance.
+- **The only positive statement here that does not depend on a threshold is an interval,
+  and it is reported as such:** paired bootstrap over clusters gives
+  **+6.29pp [+1.00, +12.00]**, excluding zero (`stats.cluster_bootstrap()`, seeded; the sign test and Wilcoxon come from
+  `stats.cluster_ratio_tests()`, and note their p depends on whether a continuity
+  correction is applied - 0.023 with, 0.031 without, which is itself a reason not to
+  treat either as a verdict).
+  The sign test on the same clusters says p=0.146. They disagree because the
+  difference distribution is badly skewed - 8 of the 12 non-zero clusters sit at exactly
+  ±100pp (single-question clusters), so the mean is theirs. **Mean says
+  yes, median and sign say not yet.** Both are printed; neither is chosen.
+
+So this project does not report "significant" or "not significant". It reports
+direction, effect size, an interval, and the fact that the binary verdict flips on a
+modelling choice - because "p=0.057 therefore no effect" is as much an artifact as
 "p=0.039 therefore there is one". Reproduce with
-`python -c "from sqlagent import stats; print(stats.cluster_sensitivity('abl2-baseline','abl2-3shot'))"`.
+`python -c "from sqlagent import stats as s; print(s.cluster_sensitivity('abl2-baseline','abl2-3shot')); print(s.family_sensitivity('abl2-baseline','abl2-3shot')); print(s.cluster_ratio_tests('abl2-baseline','abl2-3shot')); print(s.cluster_bootstrap('abl2-baseline','abl2-3shot'))"`.
 
 The decomposition that makes it concrete: of the 11 tasks 3-shot fixed, **9 come from two
 families** (`metric_by_group` 5, `category_slice` 4), and **15 of the 19 families change
 net zero**. "+4.2pp over 192 tasks" is, more honestly, "a change in 12 tasks inside 2
-template families".
+template families". And 14 discordant pairs are too few to rule out moderate clustering
+either - the honest statement is *unmeasured*, not *absent*. All four tables above are
+produced by those functions; none of them is transcribed.
 
 **Self-repair earns nothing here, and that is the finding.** Disabling it changes
 *zero* task outcomes, because the first query executes successfully on ~99% of tasks
