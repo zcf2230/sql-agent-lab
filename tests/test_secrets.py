@@ -17,11 +17,26 @@ KEY_SHAPE = re.compile("sk-[A-Za-z0-9][A-Za-z0-9._-]{29,}")
 
 import pytest
 
-pytest.importorskip("sqlagent.secrets", reason="DPAPI is Windows-only")
-from sqlagent import secrets  # noqa: E402
+from sqlagent import secrets  # imports on every platform now; see DPAPI_AVAILABLE below
 
 # deliberately not key-shaped: the worktree scan below must not need an exclusion list
 CANARY = "unit-test-fixture-only-never-a-credential"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="this is the non-Windows branch")
+def test_the_module_imports_off_windows_and_says_what_is_unavailable():
+    """The first CI run on Linux failed at *collection*: `secrets` raised ImportError at
+    import time, which `importorskip` does not skip (it only skips a missing module, not
+    one that raises about itself), so the dotenv-hygiene tests died with the DPAPI ones.
+    Availability is data, and the error belongs at the call site."""
+    assert secrets.DPAPI_AVAILABLE is False
+    with pytest.raises(OSError, match="DPAPI"):
+        secrets.protect(b"anything")
+    with pytest.raises(OSError, match="DPAPI"):
+        secrets.unwrap(b"anything")
+    # the parts that are not DPAPI still work, which is why this file must run anywhere
+    assert secrets.looks_placeholder("sk-your-key-here") is True
+    assert secrets.blob_path("qwen-flash").name == "sqlagent.qwen_flash.dpapi"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")

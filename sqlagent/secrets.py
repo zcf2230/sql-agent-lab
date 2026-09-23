@@ -60,22 +60,39 @@ def blob_path(model: str | None = None) -> Path:
 # Changing this string invalidates every stored blob (deliberate, not a bug).
 ENTROPY = b"sql-agent-lab:credential:v1"
 
-if os.name != "nt":  # pragma: no cover - the benchmark runs on Windows
-    raise ImportError("sqlagent.secrets uses Windows DPAPI and is unavailable on this platform")
+# DPAPI is Windows-only, but the module has to import everywhere: it also parses
+# `.env`, and an import-time `raise ImportError` turned "no DPAPI on this platform"
+# into a collection error for the whole test file - including the dotenv-hygiene
+# tests, which are perfectly cross-platform. `pytest.importorskip` cannot rescue an
+# ImportError the module raises about itself; it only skips when the named module is
+# absent. So the platform check is data, not an exception at import time, and the
+# exception is deferred to the two functions that actually call crypt32.
+try:
+    import ctypes
+    from ctypes import wintypes
 
-import ctypes
-from ctypes import wintypes
-
-crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
-kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-CRYPTPROTECT_UI_FORBIDDEN = 0x01
-
-
-class _DATA_BLOB(ctypes.Structure):
-    _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+    crypt32 = ctypes.WinDLL("crypt32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    CRYPTPROTECT_UI_FORBIDDEN = 0x01
+    DPAPI_AVAILABLE = True
+except Exception:  # pragma: no cover - non-Windows: no ctypes.WinDLL
+    DPAPI_AVAILABLE = False
 
 
-def _to_bytes(blob: _DATA_BLOB) -> bytes:
+def _require_dpapi() -> None:
+    """OSError, not RuntimeError: `config.resolve_api_key` treats an unavailable
+    credential store as "no key here" and falls through to the environment."""
+    if not DPAPI_AVAILABLE:
+        raise OSError("sqlagent.secrets uses Windows DPAPI and is unavailable on this platform")
+
+
+if DPAPI_AVAILABLE:  # pragma: no cover - the class body needs wintypes
+
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _to_bytes(blob: "_DATA_BLOB") -> bytes:
     try:
         return ctypes.string_at(blob.pbData, blob.cbData)
     finally:
@@ -83,6 +100,7 @@ def _to_bytes(blob: _DATA_BLOB) -> bytes:
 
 
 def protect(plaintext: bytes) -> bytes:
+    _require_dpapi()
     entropy = _DATA_BLOB(len(ENTROPY), ctypes.create_string_buffer(ENTROPY, len(ENTROPY)))
     src = _DATA_BLOB(len(plaintext), ctypes.create_string_buffer(plaintext, len(plaintext)))
     dst = _DATA_BLOB()
@@ -96,6 +114,7 @@ def protect(plaintext: bytes) -> bytes:
 
 
 def unwrap(blob: bytes) -> bytes:
+    _require_dpapi()
     entropy = _DATA_BLOB(len(ENTROPY), ctypes.create_string_buffer(ENTROPY, len(ENTROPY)))
     src = _DATA_BLOB(len(blob), ctypes.create_string_buffer(blob, len(blob)))
     dst = _DATA_BLOB()
