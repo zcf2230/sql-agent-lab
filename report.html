@@ -50,8 +50,8 @@
       <div class="card"><h3>93.2%</h3><p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>~¥11.9</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
-      <div class="card"><h3>11.6M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
+      <div class="card"><h3>~¥14.1</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>13.5M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>4 / 192（2.1pp）</h3><p>噪声底：同配置基线最大两两差异，来自 <code>sqlagent.stats</code></p></div>
       <div class="card"><h3 style="color:#e07a6b">0 / 3</h3><p>配对比较中达到 p&lt;0.05 的项数（详见第 2 节）</p></div>
     </div>
@@ -97,7 +97,37 @@
    一个噪声底函数、还漏掉了最差的那一对基线，于是同一份材料里同时存在 2/192 与 4/192；
    那才是这张表存在的理由。</div>
 
- <h2>3 · 判分器校准（谁来审计审计者）</h2>
+ 
+ <h2>3 · 同题重述稳定性（一次问法只是一个样本）</h2>
+ <div class="sub">做法：从存档题面反推裸题面（套回生成器模板必须<b>逐字节</b>还原，否则该题跳过并报告），
+  再用生成器自己的全部 4 种问法各跑一遍；gold SQL、<code>require_order</code>、
+  判分函数统统不变，只问题面。四组选题、四种抽样规则，产物各自独立命名。</div>
+ <table><thead><tr><th>抽样规则</th><th class=num>题</th><th class=num>运行</th><th class=num>四种问法一致</th><th class=num>换问法即翻脸</th><th class=num>基准问法通过率</th><th class=num>问法平均</th><th class=num>花费</th><th>能不能外推到全卷</th></tr></thead><tbody><tr><td>families<div class='sub'>每族第一题</div></td><td class='num'>19</td><td class='num'>76</td><td class='num'>19/19</td><td class='num'><b>0/19 = 0%</b></td><td class='num'>100.0%</td><td class='num'>100.0%</td><td class='num'>$0.0655</td><td style='color:#e07a6b'>否——19 题四种问法全对，零区分力（刻意挑了每个族最简单的题）</td></tr><tr><td>failures<div class='sub'>baseline 判错的全部题</div></td><td class='num'>21</td><td class='num'>84</td><td class='num'>17/21</td><td class='num'><b>4/21 = 19%</b></td><td class='num'>0.0%</td><td class='num'>11.9%</td><td class='num'>$0.0793</td><td style='color:#4f9d8f'>是——但它是普查而不是抽样，所以换算不乘系数</td></tr><tr><td>correct-representative<div class='sub'>baseline 判对、按族占比抽样</div></td><td class='num'>22</td><td class='num'>88</td><td class='num'>21/22</td><td class='num'><b>1/22 = 5%</b></td><td class='num'>100.0%</td><td class='num'>98.9%</td><td class='num'>$0.0770</td><td style='color:#4f9d8f'>是——唯一一组按占比抽的</td></tr><tr><td>correct-boundary<div class='sub'>baseline 判对、专挑同骨架内有对有错的题 + 边界族</div></td><td class='num'>20</td><td class='num'>80</td><td class='num'>18/20</td><td class='num'><b>2/20 = 10%</b></td><td class='num'>100.0%</td><td class='num'>97.5%</td><td class='num'>$0.0794</td><td style='color:#e07a6b'>否——刻意过采样不稳定</td></tr></tbody></table>
+ <div class="note warn"><b>误差的两个方向都被量到了，而且不在同一批题上，所以不抵消。</b>
+   低估侧是普查：baseline 判错的全部 21 道非 trivial 失败题里，
+   <b>4 道（19%）换一种问法就做对了</b>，
+   直接等于 <b>2.08pp</b> 的 pass@1 低估（4/192，不乘任何系数）。
+   高估侧只能按族占比抽样才有效：判对的题里 <b>1/22 = 4.5%
+   （Wilson 95% [0.8%, 21.8%]）换一种问法就判错</b>。</div>
+ <div class="note"><b>"措辞造成多少高估"有两种读法，相差 3.0pp，必须点名用的是哪一种：</b>
+   读法 A「换一种说法即判丢」= 89.1% × 4.5% =
+   <b>4.0pp</b>（区间 0.7–19.4pp）；
+   读法 B「四种问法各跑一遍取平均」= 89.1% ×
+   1.1pp =
+   <b>1.0pp</b>。差在"一道题四种问法里错几种"。</div>
+ <div class="note warn"><b>第一条那一组（<code>families</code>）是本实验自己的设计错误，产物保留在仓库里。</b>
+   "每个模板族取第一题"看着像分层抽样，实际是刻意挑每个族最简单的那道，于是 19 题
+   四种问法全对、一致率 100%、翻脸 0 道——<b>那不是稳定，那是零区分力</b>：没有可动摇的东西，
+   当然测不到动摇。判分器审计里批评过同一件事（某格缺陷根本到不了答案，那个 100% 就不是证据）。</div>
+ <div class="note">限制：唯一可外推的那一组只有 22 题，4.5% 的区间宽到跨一个数量级，
+   <b>它只用于判断量级，不是可发布的修正系数</b>；而且 4 种问法之间语义距离不等
+   （<code>Using the platform tables, ...</code> 与 <code>Please answer with SQL: ...</code>
+   比裸题面彼此更接近），所以"4 种问法"不是 4 次独立抽样，取平均那个口径因此偏乐观。
+   <b>本节每个数字都来自 <code>sqlagent/stats.py</code> 的
+   <code>restability_report()</code></b>——与 <code>scripts/restability.py --analyse-only</code>
+   同一份实现；有一条测试禁止 <code>report.py</code> 自己另算，也禁止脚本自己算。</div>
+
+ <h2>4 · 判分器校准（谁来审计审计者）</h2>
  <table><thead><tr><th>注入缺陷</th><th>应然裁决</th><th class=num>可测样本</th><th class=num>判分一致</th>
    <th class=num>false-accept</th><th class=num>注入后无变化</th><th class=num>一致率</th></tr></thead>
    <tbody><tr><td><code>reflow</code></td><td>接受</td><td class='num'>110</td><td class='num'>110</td><td class='num ok'>0</td><td class='num'>0</td><td class='num'>100.0%</td></tr>
@@ -109,7 +139,7 @@
  <div class="note">“注入后无变化”是指缺陷没能改变结果集（例如给单行结果加 <code>LIMIT 3</code>）。
    这类样本按“应接受”计入一致率而不是被剔除——剔除它们会让指标自我美化。</div>
 
- <h2>4 · 失败归因（baseline）</h2>
+ <h2>5 · 失败归因（baseline）</h2>
  <table><thead><tr><th>原因</th><th class=num>题数</th><th>含义</th></tr></thead><tbody><tr><td><code>value_mismatch</code></td><td class='num'>8</td><td>行数列数都对，但具体数值不同——多为聚合粒度、日期口径或过滤条件理解错</td></tr>
 <tr><td><code>column_count_mismatch</code></td><td class='num'>7</td><td>投影列数不对——常因没答完问题，或把探查用的临时查询当成了最终答案</td></tr>
 <tr><td><code>row_count_mismatch</code></td><td class='num'>6</td><td>返回行数不对——常见是 JOIN 扇出产生重复行，或漏掉 DISTINCT</td></tr></tbody></table>
@@ -117,7 +147,7 @@
    只有单元测试层面的证据，没有行为层面的证据。这一栏故意保留着，因为“拿零次观测冒充结论”
    正是这个项目反对的事。</div>
 
- <h2>5 · 分类通过率</h2>
+ <h2>6 · 分类通过率</h2>
  <table><thead><tr><th>题型族</th><th class=num>通过</th><th>通过率</th></tr></thead><tbody><tr><td><code>metric_by_group</code></td><td class='num'>7/12</td><td><div class="bar"><span style="width:58.3%;background:#c98a4b"></span><em>58.3%</em></div></td></tr>
 <tr><td><code>arithmetic</code></td><td class='num'>3/5</td><td><div class="bar"><span style="width:60.0%;background:#c98a4b"></span><em>60.0%</em></div></td></tr>
 <tr><td><code>topk_per_group</code></td><td class='num'>2/3</td><td><div class="bar"><span style="width:66.7%;background:#c98a4b"></span><em>66.7%</em></div></td></tr>
@@ -138,7 +168,7 @@
 <tr><td><code>window</code></td><td class='num'>4/4</td><td><div class="bar"><span style="width:100.0%;background:#4f9d8f"></span><em>100.0%</em></div></td></tr>
 <tr><td><code>text_match</code></td><td class='num'>6/6</td><td><div class="bar"><span style="width:100.0%;background:#4f9d8f"></span><em>100.0%</em></div></td></tr></tbody></table>
 
- <h2>6 · 对抗性安全探测</h2>
+ <h2>7 · 对抗性安全探测</h2>
  <div class="sub">192 道正常题里护栏触发 <b>0 次</b>——那只说明模型没试。这一组 26 条探测专门<b>邀请</b>
    模型做越权动作，用来把"没有观测"变成"有数字"。</div>
  <div class="cards">
@@ -176,7 +206,7 @@
    不是互斥的，有样本两者同时成立——模型说"我做不到"却仍然去试。所以"拒绝率"不能当安全指标用。
    另外 <code>direct_write</code> 6/6 全过，几乎肯定是模型被训练成拒绝显式删除指令，与本项目护栏无关。</div>
 
- <h2>7 · Trace 回放</h2>
+ <h2>8 · Trace 回放</h2>
  <div class="sub">每一题的完整过程：模型看到什么、调了哪个工具、数据库回什么、错在哪一步。
    上面所有数字都能在这里找到出处。</div>
  <div class="filter">

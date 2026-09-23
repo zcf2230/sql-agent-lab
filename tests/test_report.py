@@ -89,3 +89,35 @@ def test_report_shows_the_aggregation_sensitivity_not_just_one_p():
     for r in sens:
         assert f"{r['p_value']:.4f}" in REPORT_HTML, f"{r['label']} p missing"
     assert str(len(stats.clusters())) in REPORT_HTML, "the skeleton count should be stated"
+
+
+def test_report_does_not_own_a_second_reliability_implementation():
+    """The two-forbidden shape, again: one statistic computed twice. `report.py` may
+    render `stats.restability_report`, never redo its arithmetic - the last time that
+    happened the report printed a noise floor with a different definition."""
+    import inspect
+
+    assert not hasattr(report, "restability") and not hasattr(report, "restability_report"), \
+        "report.py must render sqlagent.stats.restability_report(), not reimplement it"
+    assert "stats.restability_report(" in inspect.getsource(report)
+
+
+def test_generated_report_carries_the_wording_noise_instead_of_only_the_prose():
+    """Every question on this page was asked one way, so the headline is a single draw
+    from a set of surface forms. That limitation used to exist only in README and
+    HANDOFF while the artifact a recruiter opens showed two decimals and no caveat -
+    the same gap that made section 2 necessary."""
+    if not REPORT_HTML:
+        pytest.skip("report.html not generated; run `python -m sqlagent.report`")
+    rep = stats.restability_report("correct-representative")
+    fail = stats.restability_report("failures")
+    lo, hi = rep["fragile_ci"]
+    needles = ["同题重述稳定性", f"{rep['fragile_share']:.1%}", f"{lo:.1%}", f"{hi:.1%}",
+               f"{rep['overstatement_pp_any']:.1f}pp", f"{rep['overstatement_pp_mean']:.1f}pp",
+               f"{fail['understatement_pp']:.2f}pp"]
+    for needle in needles:
+        assert needle in REPORT_HTML, f"report.html does not contain {needle!r}"
+    for p in stats.RESTABILITY_PICKS:
+        assert p in REPORT_HTML, f"the {p} sample has no row in report.html"
+    # the run that measured nothing is shown with its verdict, not quietly dropped
+    assert "零区分力" in REPORT_HTML

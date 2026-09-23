@@ -231,7 +231,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 模型实际尝试 6/26（不给比率） | `results/adversarial.jsonl` 的 `by_category` | `python -m sqlagent.adversarial`；**写路径另有 `python scripts/guard_corpus.py`：120 条写语句 0 穿透、192 条 gold 读 0 误拒，$0** |
 别名绕过被拦 | `runs/*.jsonl` 中 `catalog-02` 的两次尝试 | 报告里搜 `sqlite_schema` |
 缓存随判分器源码失效 | `config.py:61` + `:146` | `tests/test_config.py::test_code_digest_ignores_line_endings` |
-单种问法的分数含措辞噪声（低估 2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl` | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
+单种问法的分数含措辞噪声（低估 2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl`；同一份实现渲染在 `report.html` 第 3 节 | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
 无效运行不出分 | `runner.py:132` | `tests/test_runner.py::test_a_run_that_crashes_is_not_reported_as_a_low_score` |
 
 ---
@@ -825,7 +825,9 @@ model 折进去，clone 里复测仍然 6 个文件脏。**改了展示、没改
 
 **重看结论不花钱**：加 `--analyse-only` 就只读已提交的产物并重印，例如
 `python scripts/restability.py --pick correct-representative --analyse-only`。
-本节每个数字（含外推与 Wilson 区间）都由这条命令产出。`tests/test_artifacts.py`
+本节每个数字（含外推与 Wilson 区间）都由这条命令产出。算术在 `sqlagent/stats.py`
+的 `restability_report()` 里，脚本与 `report.html` 第 3 节共用它——有一条测试禁止
+`report.py` 自己另算，正是当年噪声底两处各说一套之后加的。`tests/test_artifacts.py`
 断言四组产物与各自的 `data/tasks_restability-*.jsonl` 逐 id 对应——因为这两类文件
 曾经同名过（§9-22）。
 

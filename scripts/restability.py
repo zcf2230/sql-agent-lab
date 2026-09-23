@@ -53,6 +53,7 @@ OUT_SET_STEM = "tasks_restability"
 # entries but "{q}" appears twice, so only four distinct forms exist and two fifths of
 # the benchmark gets the bare question. Both facts are measured here rather than
 # assumed, because the duplicate is itself a finding this script can confirm.
+from sqlagent import stats  # noqa: E402
 from sqlagent.data.build_tasks import PARAPHRASE  # noqa: E402
 
 
@@ -170,13 +171,12 @@ def select(tasks: list[dict], per_family: int = 1, pick: str = "families") -> li
         # correct tasks - i.e. it measured one family and labelled it a boundary
         # sample. (b) is therefore drawn round-robin, two per family, busiest family
         # first, and the composition is printed so the same mistake is visible.
-        from sqlagent.stats import skeleton
         good = baseline_correct()
         bad = baseline_failures()
         all_rows = [json.loads(l) for l in TASKS.read_text(encoding="utf-8").splitlines() if l.strip()]
         sk_group: dict[tuple, list[str]] = defaultdict(list)
         for t in all_rows:
-            sk_group[(t["id"].rsplit("-", 1)[0], skeleton(t["gold_sql"]))].append(t["id"])
+            sk_group[(t["id"].rsplit("-", 1)[0], stats.skeleton(t["gold_sql"]))].append(t["id"])
         sharp = [i for k, ids in sorted(sk_group.items())
                  for i in ids if i in good and any(j in bad for j in ids)]
         fam_has_bad: dict[str, int] = defaultdict(int)
@@ -261,140 +261,89 @@ def run_model(model: str, workers: int) -> dict:
 
 
 def analyse(model: str) -> int:
-    rows = [json.loads(l) for l in (ROOT / "results" / f"{tag_of(model)}.jsonl")
-            .read_text(encoding="utf-8").splitlines() if l.strip()]
-    body = [r for r in rows[1:] if "id" in r]
-    # The runner writes a fixed set of per-task fields, so `is_published_form` never
-    # reaches the results file. Reading it back off the rows silently returned False
-    # for everything and the "published wording" column was really "variant #r0" -
-    # which is the bare question, a different thing. Join against the set we built.
-    set_rows = [json.loads(l) for l in OUT_SET.read_text(encoding="utf-8").splitlines() if l.strip()]
-    published_of = {r["id"]: bool(r.get("is_published_form")) for r in set_rows}
-    # (correct, is_the_published_wording) per variant, grouped by the underlying task
-    per: dict[str, list[tuple[bool, bool]]] = defaultdict(list)
-    for r in body:
-        base = r["id"].split("#")[0]
-        per[base].append((bool(r["correct"]), published_of.get(r["id"], False)))
-    per = {k: sorted(v, key=lambda t: t[1], reverse=True) for k, v in per.items()}  # published first
-    flags: dict[str, list[bool]] = {k: [c for c, _ in v] for k, v in per.items()}
+    """Print what `sqlagent.stats.restability_report` computed - and nothing else.
 
-    n_forms = max(len(v) for v in flags.values())
-
-    all_agree = sum(1 for v in flags.values() if len(set(v)) == 1)
-    always_right = sum(1 for v in flags.values() if all(v))
-    always_wrong = sum(1 for v in flags.values() if not any(v))
-    sometimes = len(flags) - all_agree
-    mean_rate = sum(sum(v) / len(v) for v in flags.values()) / len(flags)
-    single = sum(v[0] for v in flags.values()) / len(flags)   # the wording the benchmark used
+    Deliberately no arithmetic in this file. The same rates are rendered by
+    `report.html`, and a second implementation of one statistic is the exact defect
+    three rounds of review kept naming (the report once printed its own noise floor
+    with a different definition than `stats.py`).
+    """
+    r = stats.restability_report(_CURRENT_PICK)
+    if r["model"] != model:
+        print(f"  [警告] 产物里的模型是 {r['model']}，与 --model {model} 不一致")
+    n, forms = r["n_tasks"], r["n_forms"]
+    fragile, lucky = r["fragile"], r["lucky"]
+    flips = len(fragile) + len(lucky)
 
     print("")
-    print(f"=== 同题重述稳定性（{model}，{len(flags)} 题 × {n_forms} 种问法 = {len(body)} 次运行）===")
-    print(f"  {n_forms} 种问法结果完全一致的题 : {all_agree}/{len(flags)}  ({all_agree/len(flags):.0%})")
-    if not any(any(v) for v in flags.values()):
-        print("  注意：这批题四种问法下全错——**本组同样没有区分力**，"
-              "它只说明这些失败与措辞无关。")
-    print(f"    其中全对                     : {always_right}")
-    print(f"    其中全错                     : {always_wrong}")
-    print(f"  **换一种问法就会翻脸的题       : {sometimes}/{len(flags)}  ({sometimes/len(flags):.0%})**")
-    print(f"  问法平均通过率                 : {mean_rate:.1%}")
-    print(f"  基准实际采用的那一种问法       : {single:.1%}")
-    print(f"  ⇒ 单次抽样与「平均而言」的差   : {(single-mean_rate)*100:+.1f}pp")
+    print(f"=== 同题重述稳定性（{model}，{n} 题 × {forms} 种问法 = {r['n_runs']} 次运行）===")
+    print(f"  {forms} 种问法结果完全一致的题 : {r['agree']}/{n}  ({r['agree']/n:.0%})")
+    if r["always_wrong"] == n:
+        print("  注意：这批题四种问法下全错——**本组同样没有区分力**，它只说明这些失败与措辞无关。")
+    print(f"    其中全对                     : {r['always_right']}")
+    print(f"    其中全错                     : {r['always_wrong']}")
+    print(f"  **换一种问法就会翻脸的题       : {flips}/{n}  ({flips/n:.0%})**")
+    print(f"  问法平均通过率                 : {r['mean_rate']:.1%}")
+    print(f"  基准实际采用的那一种问法       : {r['published_rate']:.1%}")
+    print(f"  ⇒ 单次抽样与「平均而言」的差   : "
+          f"{(r['published_rate'] - r['mean_rate']) * 100:+.1f}pp")
+    print(f"\n  基准问法判对、换个说法就错的题 : {len(fragile)}  {fragile[:6]}")
+    print(f"  基准问法判错、换个说法反而对的题 : {len(lucky)}  {lucky[:6]}")
 
-    # The number that matters for the published claim: on tasks where the benchmark's
-    # own phrasing scored correct, how often does another phrasing not?
-    fragile = [k for k, v in flags.items() if v[0] and not all(v)]
-    lucky = [k for k, v in flags.items() if not v[0] and any(v)]
-    print(f"\n  基准问法判对、换个说法就错的题 : {len(fragile)}  {[k for k in fragile][:6]}")
-    print(f"  基准问法判错、换个说法反而对的题 : {len(lucky)}  {[k for k in lucky][:6]}")
     if fragile:
-        share = len(fragile) / len(flags)
-        print(f"\n  在这 {len(flags)} 题里，{len(fragile)} 题（{share:.0%}）属于「基准那种问法判对了，"
+        print(f"\n  在这 {n} 题里，{len(fragile)} 题（{len(fragile)/n:.0%}）属于「基准那种问法判对了，"
               "换一种问法就判错」。")
-        if _CURRENT_PICK != "correct-representative":
-            print(f"  注意：这 {len(flags)} 题是按条件刻意挑的（pick={_CURRENT_PICK}），"
-                  "这个比例**不可外推**；能外推的只有按族占比抽的那一组。")
-        print(f"  样本只有 {len(flags)} 题、每题 {n_forms} 种问法，区间很宽——**它只用于判断量级，"
+        if not r["extrapolatable"]:
+            print(f"  注意：这 {n} 题是按条件刻意挑的（pick={_CURRENT_PICK}），这个比例**不可外推**；"
+                  "能外推的只有按族占比抽的那一组。")
+        print(f"  样本只有 {n} 题、每题 {forms} 种问法，区间很宽——**它只用于判断量级，"
               "不足以给出一个可发布的修正系数。**")
     if lucky and not fragile:
         print("")
         print("  这批题是按「baseline 判错」选的，所以基准问法 0% 是选择方式决定的，不是发现。")
-        print(f"  有意义的是那 {len(lucky)} 道：")
-        print(f"  **换一种问法它就做对了 —— 即 {len(lucky)/len(flags):.0%} 的「失败」不是能力缺口，"
-              "是这一种措辞造成的。**")
+        print(f"  有意义的是那 {len(lucky)} 道：**换一种问法它就做对了 —— "
+              f"即 {len(lucky)/n:.0%} 的「失败」不是能力缺口，是这一种措辞造成的。**")
         print("  反过来读 pass@1：它低估的部分就在这儿。而低估与高估不是同一批题，"
               "所以不能靠「两边都有一点，抵消了」了事。")
-        print("  三种问法都能做对、只有基准那一种失败的题："
-              f"{[k for k in lucky if sum(flags[k]) >= 3]} —— 这些是措辞直接造成的误判。")
-        if _CURRENT_PICK == "failures" and n_published_tasks():
-            total = n_published_tasks()
-            print(f"  这 {len(flags)} 道是 baseline 全部非 trivial 失败题的**普查**、不是抽样，"
-                  f"所以外推不用乘系数：{len(lucky)}/{total} = "
-                  f"{100 * len(lucky) / total:.2f}pp 是 pass@1 **低估**的量。")
+        print(f"  {forms} 种里有 {forms-1} 种都能做对、只有基准那一种失败的题："
+              f"{r['robust_lucky']} —— 这些是措辞直接造成的误判。")
+        if "understatement_pp" in r:
+            print(f"  这 {n} 道是 baseline 全部非 trivial 失败题的**普查**、不是抽样，所以外推不用乘系数："
+                  f"{r['understatement_numerator']}/{r['benchmark_tasks']} = "
+                  f"{r['understatement_pp']:.2f}pp 是 pass@1 **低估**的量。")
     elif fragile and not lucky:
         print("")
         print(f"  这批题基准问法全对，但 {len(fragile)} 道换个说法就错：pass@1 高估的部分。")
 
-    if _CURRENT_PICK == "correct-representative" and fragile:
-        _extrapolate(len(fragile), len(flags), mean_rate, single)
+    if "fragile_share" in r:
+        lo, hi = r["fragile_ci"]
+        a, b = r["overstatement_pp_any"], r["overstatement_pp_mean"]
+        alo, ahi = r["overstatement_pp_any_ci"]
+        head = r["headline_pass1"]
+        print("")
+        print("  外推到全卷（只有 correct-representative 这一组可以这么做：它按族占比抽样，"
+              "其余各组都是刻意过采样的）")
+        print(f"    措辞依赖的判对题占比 {len(fragile)}/{n} = {r['fragile_share']:.1%}   "
+              f"Wilson 95% [{lo:.1%}, {hi:.1%}]")
+        print(f"    读法 A「换一种说法即判丢」：{head:.1%} × {r['fragile_share']:.1%} = "
+              f"**{a:.1f}pp**（区间 {alo:.1f}–{ahi:.1f}pp）")
+        print(f"    读法 B「每种问法都算一遍取平均」：{head:.1%} × "
+              f"{(r['published_rate']-r['mean_rate'])*100:.1f}pp = **{b:.1f}pp**")
+        print(f"    两种读法差 {abs(a-b):.1f}pp——差在「一道题四种问法里错几种」，"
+              "所以必须说清问的是哪一个。")
     return 0
 
-
-def _baseline_summary() -> dict:
-    """The published baseline's own summary line - the numbers this extrapolates from."""
-    p = ROOT / "results" / "abl2-baseline.jsonl"
-    if not p.exists():
-        return {}
-    return json.loads(p.read_text(encoding="utf-8").splitlines()[0]).get("_summary") or {}
-
-
-def n_published_tasks() -> int:
-    return _baseline_summary().get("n_tasks", 0)
-
-
-def _extrapolate(k: int, n: int, mean_rate: float, single: float) -> None:
-    """Scale the representative sample back to the benchmark, both ways it can be read.
-
-    Two different questions hide in "how much is wording luck": what share of the
-    credited answers would not survive a re-ask (a binomial over tasks), and what the
-    score would be if every task were averaged over its phrasings (a mean over forms).
-    Reporting one and implying the other is how a 1pp becomes a 4pp.
-    """
-    from sqlagent.stats import wilson
-
-    lo, hi = wilson(k, n)
-    head = _baseline_summary().get("pass_at_1")
-    print("")
-    print(f"  外推到全卷（只有 correct-representative 这一组可以这么做：它按族占比抽样，"
-          f"其余各组都是刻意过采样的）")
-    print(f"    措辞依赖的判对题占比 {k}/{n} = {k/n:.1%}   Wilson 95% [{lo:.1%}, {hi:.1%}]")
-    if not head:
-        print("    results/abl2-baseline.jsonl 不在，跳过换算")
-        return
-    print(f"    读法 A「换一种说法即判丢」：{head:.1%} × {k/n:.1%} = "
-          f"**{100*head*k/n:.1f}pp**（区间 {100*head*lo:.1f}–{100*head*hi:.1f}pp）")
-    print(f"    读法 B「每种问法都算一遍取平均」：{head:.1%} × {(single-mean_rate)*100:.1f}pp = "
-          f"**{head*(single-mean_rate)*100:.1f}pp**")
-    print(f"    两种读法差 {abs(100*head*k/n - head*(single-mean_rate)*100):.1f}pp——"
-          "差在「一道题四种问法里错几种」，所以必须说清问的是哪一个。")
-
-
-def _baseline_pass1() -> float | None:
-    p = ROOT / "results" / "abl2-baseline.jsonl"
-    if not p.exists():
-        return None
-    return json.loads(p.read_text(encoding="utf-8").splitlines()[0])["_summary"].get("pass_at_1")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="deepseek-chat")
     ap.add_argument("--workers", type=int, default=4)
-    ap.add_argument("--pick",
-                    choices=("families", "failures", "correct-representative", "correct-boundary"),
-                    default="families",
-                    help="families = one per template family (measures success-side "
-                         "fragility); failures = every task the baseline got wrong "
-                         "(measures whether failures are wording artifacts)")
+    ap.add_argument("--pick", choices=list(stats.RESTABILITY_PICKS), default="families",
+                    help="which tasks to re-ask. `families` is the first attempt and it "
+                         "measured nothing; `failures` is a census of every baseline "
+                         "failure; `correct-representative` is the only proportional "
+                         "sample; `correct-boundary` deliberately over-samples instability")
     ap.add_argument("--dry-run", action="store_true", help="build the set, spend nothing")
     ap.add_argument("--analyse-only", action="store_true",
                     help="re-read results/restability-<model>.jsonl and reprint the "
@@ -411,11 +360,9 @@ def main() -> int:
     set_rows, skipped = build_set(chosen)
     print(f"题库问法模板：{len(PARAPHRASE)} 条，去重后 {len(distinct_forms())} 种"
           f"（重复项：{[p for p in set(PARAPHRASE) if PARAPHRASE.count(p) > 1]}）")
-    PICK_LABEL = {"families": "每族一题", "failures": "baseline 判错的全部题",
-                  "correct-representative": "baseline 判对、按族占比抽样（唯一可外推的一组）",
-                  "correct-boundary": "baseline 判对、但专挑同骨架内有对有错的题 + 边界族（上界，不可外推）"}
-    print(f"选中 {len(chosen)} 题（{args.pick} = {PICK_LABEL[args.pick]}，无随机）"
-          f"→ 展开 {len(set_rows)} 条")
+    what, extrapolatable = stats.RESTABILITY_PICK_LABELS[args.pick]
+    print(f"选中 {len(chosen)} 题（{args.pick} = {what}，无随机）→ 展开 {len(set_rows)} 条")
+    print(f"  可外推性：{extrapolatable}")
     if skipped:
         print(f"无法还原裸题面、已跳过：{skipped}")
     OUT_SET.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in set_rows) + "\n",

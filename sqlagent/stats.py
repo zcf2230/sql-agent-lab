@@ -14,7 +14,7 @@ import json
 import math
 import random
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -290,3 +290,128 @@ def cluster_ratio_tests(base_tag: str, variant_tag: str) -> dict:
             "wilcoxon_p": math.erfc(abs(z) / math.sqrt(2)),
             "differences_pp": sorted(round(x, 1) for x in diffs),
             "method_note": "Wilcoxon 用正态近似 + 结校正，未加连续性校正；加与不加会在 0.023/0.031 之间移动"}
+
+
+# --------------------------------------------------------------------------------------
+# Test-retest reliability: same task, every wording the generator can produce.
+#
+# The four sampling rules are declared here because three consumers name them: the
+# script that ran them, the report that quotes them, and the test that checks each
+# result file still matches its own task set. A list copied into each of those is how
+# two of them end up describing different runs.
+
+RESTABILITY_PICKS = ["families", "failures", "correct-representative", "correct-boundary"]
+# What each rule sampled, and whether its rate may be multiplied back up to 192. The
+# label and the caveat travel together so a table cannot render a number whose
+# extrapolatability has been forgotten. `families` is kept with its own verdict
+# because it is the design error, and the error is the lesson.
+RESTABILITY_PICK_LABELS = {
+    "families": ("每族第一题", "否——19 题四种问法全对，零区分力（刻意挑了每个族最简单的题）"),
+    "failures": ("baseline 判错的全部题", "是——但它是普查而不是抽样，所以换算不乘系数"),
+    "correct-representative": ("baseline 判对、按族占比抽样", "是——唯一一组按占比抽的"),
+    "correct-boundary": ("baseline 判对、专挑同骨架内有对有错的题 + 边界族", "否——刻意过采样不稳定"),
+}
+RESTABILITY_MODEL = "deepseek-chat"
+REPREPRESENTATIVE_PICK = "correct-representative"
+
+
+def run_summary(tag: str) -> dict:
+    """The `_summary` line a run wrote, or {} if the run is absent."""
+    path = RESULTS / f"{tag}.jsonl"
+    if not path.exists():
+        return {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            return json.loads(line).get("_summary") or {}
+    return {}
+
+
+def restability(pick: str, model: str = RESTABILITY_MODEL) -> dict:
+    """Per-task verdicts for one sampling rule, with the published wording first.
+
+    `fragile` / `lucky` answer "does *any* other wording change the verdict";
+    `published_rate` / `mean_rate` answer "how many of the four wordings change it".
+    Those are different quantities and the gap between them is the difference between
+    a 4.0pp and a 1.0pp reading of the same experiment, so both come out of here and
+    neither gets recomputed downstream.
+    """
+    res = RESULTS / f"restability-{model}-{pick}.jsonl"
+    if not res.exists():
+        raise FileNotFoundError(f"results/{res.name} is missing; "
+                                f"run scripts/restability.py --pick {pick}")
+    set_path = ROOT / "data" / f"tasks_restability-{pick}.jsonl"
+    if not set_path.exists():
+        raise FileNotFoundError(f"data/tasks_restability-{pick}.jsonl is missing: without the "
+                                "task set there is no way to know which wording the "
+                                "benchmark actually asked, and 'published' silently becomes 'variant #r0'")
+    published = {r["id"]: bool(r.get("is_published_form"))
+                 for r in (json.loads(l) for l in set_path.read_text(encoding="utf-8").splitlines() if l.strip())}
+    rows = [json.loads(l) for l in res.read_text(encoding="utf-8").splitlines() if l.strip()]
+    per: dict[str, list[tuple[bool, bool]]] = defaultdict(list)
+    cost = 0.0
+    for r in rows[1:]:
+        if "id" not in r:
+            continue
+        per[r["id"].split("#")[0]].append((bool(r["correct"]), published.get(r["id"], False)))
+        cost += float(r.get("cost_usd") or 0.0)
+    if not per:
+        raise ValueError(f"results/restability-{model}-{pick}.jsonl has no per-task rows")
+    n_published = {b: sum(1 for _c, p in v if p) for b, v in per.items()}
+    bad = [b for b, n in n_published.items() if n != 1]
+    if bad:
+        raise ValueError(f"{len(bad)} task(s) do not have exactly one published wording "
+                         f"(the join to data/tasks_restability-{pick}.jsonl is broken): {bad[:5]}")
+
+    verdicts = {b: [ok for ok, _pub in sorted(v, key=lambda t: t[1], reverse=True)]
+                for b, v in per.items()}
+    # The published wording is now element 0 by construction, so `v[0]` is the wording
+    # the benchmark used rather than whichever template happened to be listed first.
+    n_forms = max(len(v) for v in verdicts.values())
+    return {
+        "pick": pick, "model": model, "cost_usd": round(cost, 5),
+        "n_tasks": len(verdicts), "n_forms": n_forms,
+        "n_runs": sum(len(v) for v in verdicts.values()),
+        "agree": sum(1 for v in verdicts.values() if len(set(v)) == 1),
+        "always_right": sum(1 for v in verdicts.values() if all(v)),
+        "always_wrong": sum(1 for v in verdicts.values() if not any(v)),
+        "published_rate": sum(v[0] for v in verdicts.values()) / len(verdicts),
+        "mean_rate": sum(sum(v) / len(v) for v in verdicts.values()) / len(verdicts),
+        "fragile": sorted(b for b, v in verdicts.items() if v[0] and not all(v)),
+        "lucky": sorted(b for b, v in verdicts.items() if not v[0] and any(v)),
+        "robust_lucky": sorted(b for b, v in verdicts.items()
+                               if not v[0] and sum(v) >= n_forms - 1),
+        "per_task": {b: v for b, v in sorted(verdicts.items())},
+    }
+
+
+def restability_report(pick: str) -> dict:
+    """`restability()` plus the arithmetic that turns a rate into pp of headline.
+
+    Scaling is only legitimate for the proportional sample. `families` and
+    `correct-boundary` oversample stability and instability respectively on purpose,
+    so `extrapolatable` is False for them and the consumers must say so rather than
+    print a number that looks like a correction factor.
+    """
+    out = dict(restability(pick))
+    head = run_summary("abl2-baseline").get("pass_at_1")
+    total = run_summary("abl2-baseline").get("n_tasks")
+    k, n = len(out["fragile"]), out["n_tasks"]
+    out["extrapolatable"] = pick == REPREPRESENTATIVE_PICK
+    out["headline_pass1"] = head
+    if out["extrapolatable"] and k and head:
+        lo, hi = wilson(k, n)
+        out.update(
+            fragile_share=k / n, fragile_ci=(lo, hi),
+            # "any other wording loses the point" - a binomial over credited tasks.
+            overstatement_pp_any=100 * head * k / n,
+            overstatement_pp_any_ci=(100 * head * lo, 100 * head * hi),
+            # "average the four wordings" - a mean over forms, always the smaller number.
+            overstatement_pp_mean=head * (out["published_rate"] - out["mean_rate"]) * 100,
+        )
+    if pick == "failures" and total:
+        # That pick is every non-trivial failure the baseline recorded, so this is a
+        # census: no scaling factor, no sampling caveat.
+        out["understatement_pp"] = 100 * len(out["lucky"]) / total
+        out["understatement_numerator"] = len(out["lucky"])
+        out["benchmark_tasks"] = total
+    return out
