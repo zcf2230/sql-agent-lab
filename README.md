@@ -518,6 +518,14 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 - `reorder_cols` acceptance depends on output column names. Two unnamed
   expressions fall back to positional comparison, where a swap *should* fail and
   currently cannot be seen.
+- **Wording accounts for part of the measured failure rate.** Re-asking the 21 tasks the
+  baseline got wrong, in every phrasing the generator itself can produce, 4 of them
+  (19%) answer correctly under some other wording - so roughly a fifth of recorded
+  failures are artifacts of the benchmark's phrasing, not model incapability. The
+  mirror-image measurement (correct answers that break when rephrased) was attempted
+  and is **uninformative as run**: the sampled tasks were all answered correctly in
+  all four phrasings, so there was nothing that could destabilise. `n=21`; direction
+  only. Reproduce for free: `python scripts/restability.py --pick failures --analyse-only`.
 - Single-turn only: there is no clarification question, no conversation memory, and
   ambiguous questions are answered anyway.
 
@@ -532,7 +540,7 @@ sqlagent/
   eval/scoring.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
   stats.py                # owns McNemar/Wilson/noise floor + which runs are paired
   figures.py              # renders docs/figures/*.svg out of results/ and runs/
-scripts/calibrate.py  scripts/significance.py
+scripts/calibrate.py  scripts/significance.py  scripts/guard_corpus.py  scripts/restability.py
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
   test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
   test_figures.py         # the generated SVGs stay readable, not just valid XML
