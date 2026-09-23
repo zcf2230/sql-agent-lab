@@ -44,6 +44,10 @@ MODES = {
 # Differences that are presentation only and therefore must still score correct.
 PRESENTATION_ONLY = {"reorder_cols"}
 
+# Passed to the runner so the sweep does not inherit a model from .env, and written
+# into the artifact so the artifact says what actually happened: no model was called.
+MOCK_MODEL = "mock-judge-sweep"
+
 
 # Fields that record *how this machine ran the query*, not what the judge decided.
 # Left in, every re-run of this script rewrites all 192 rows of six tracked files
@@ -67,11 +71,13 @@ def _normalise(path: Path) -> None:
                 elif isinstance(obj.get(field[0]), dict):
                     obj[field[0]].pop(field[1], None)
         else:
-            # `model` here is whatever the ambient .env happened to say, and no model
-            # was called: this sweep drives the mock provider to exercise the *judge*.
-            # Left alone it reads as "calibrated on deepseek-chat", and it made the
-            # committed artifacts disagree with a re-run on a different default.
-            obj["_summary"]["model"] = "mock (judge under test; no model called)"
+            # The runner records whatever the ambient .env said, and no model was called:
+            # this sweep drives the mock provider to exercise the *judge*. Left alone it
+            # reads as "calibrated on deepseek-chat", and it made the committed
+            # artifacts disagree with a re-run on a different default. Now the value is
+            # pinned at the call site too, so the display and `config_hash` agree -
+            # scrubbing only the display was the mistake in the first fix.
+            obj["_summary"]["model"] = f"{MOCK_MODEL} (no model called)"
         out.append(json.dumps(obj, ensure_ascii=False))
     path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 
@@ -81,6 +87,12 @@ def run_mode(mode: str) -> dict:
     cmd = [
         sys.executable, "-m", "sqlagent.eval.runner",
         "--provider", "mock", "--corruption", mode, "--tag", tag,
+        # Pinned, not inherited from .env. `config_hash` folds in the model, so a sweep
+        # that let the ambient default through produced one digest on the author's
+        # machine (qwen-flash in .env) and another in a fresh clone (the default) -
+        # which rewrote one line in six committed artifacts for no behavioural reason.
+        # Sweeping the judge calls no model at all, so the honest value is a constant.
+        "--model", MOCK_MODEL,
         "--workers", "4",
     ]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
