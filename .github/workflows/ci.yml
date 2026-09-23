@@ -36,7 +36,20 @@ jobs:
         run: python -m sqlagent.data.build_db   # data/*.db is gitignored by design
 
       - name: tests
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          set +e
+          python -m pytest -q --color=no --tb=short 2>&1 | tee .pytest.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            # A red build has to be diagnosable by a reader who is only allowed to look at
+            # a public repository: run logs need a token, check-run annotations do not.
+            # `%` and `:` are escaped in the payload first, then the keyword is prepended.
+            grep -E '^(FAILED|ERROR)' .pytest.log | head -15 | sed -e 's/%/%25/g' -e 's/:/%3A/g' | while IFS= read -r line; do echo "::error::$line"; done
+            tail -12 .pytest.log | sed -e 's/%/%25/g' -e 's/:/%3A/g' | tr '\n' '~' | sed -e 's/^/::error::tail%20> /'
+          fi
+          exit "$rc"
 
       # The strongest step: the numbers in README and in the docs are re-derived from
       # code and data, and the tree must still be clean afterwards. If a documented
