@@ -518,14 +518,24 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 - `reorder_cols` acceptance depends on output column names. Two unnamed
   expressions fall back to positional comparison, where a swap *should* fail and
   currently cannot be seen.
-- **Wording accounts for part of the measured failure rate.** Re-asking the 21 tasks the
-  baseline got wrong, in every phrasing the generator itself can produce, 4 of them
-  (19%) answer correctly under some other wording - so roughly a fifth of recorded
-  failures are artifacts of the benchmark's phrasing, not model incapability. The
-  mirror-image measurement (correct answers that break when rephrased) was attempted
-  and is **uninformative as run**: the sampled tasks were all answered correctly in
-  all four phrasings, so there was nothing that could destabilise. `n=21`; direction
-  only. Reproduce for free: `python scripts/restability.py --pick failures --analyse-only`.
+- **Wording accounts for part of the measured failure rate, and a smaller part of the
+  success rate.** Re-asking the 21 tasks the baseline got wrong in every phrasing the
+  generator itself can produce: 4 of them (19%) answer correctly under some other
+  wording, so roughly a fifth of recorded failures are artifacts of the benchmark's
+  phrasing, not model incapability - and since those 21 are *every* non-trivial failure,
+  that is a census, not a sample: `4/192 = 2.08pp` of understatement. The mirror image
+  needs a proportional sample, because sampling a family's easiest member measures
+  nothing (that was the first attempt: 19 tasks, all correct in all four phrasings,
+  zero discriminating power). Of 22 baseline-correct tasks drawn in proportion to family
+  size, 1 (4.5%, Wilson 95% [0.8%, 21.8%]) breaks under some other wording. Scaled to
+  the headline that is ~4.0pp of credit that is wording-dependent, or ~1.0pp if every
+  task were averaged over its four phrasings - two different questions, 3pp apart, so
+  saying which one you mean is not optional. A deliberately boundary-weighted sample
+  (20 tasks that share a gold skeleton with a failure, or come from a family containing
+  one) gives 2/20 = 10% and must not be multiplied up. Overstatement and understatement
+  sit on different tasks, so they do not cancel. `n=22` on the extrapolatable side:
+  order of magnitude, not a correction factor. Reproduce for free:
+  `python scripts/restability.py --pick correct-representative --analyse-only`.
 - Single-turn only: there is no clarification question, no conversation memory, and
   ambiguous questions are answered anyway.
 

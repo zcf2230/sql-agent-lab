@@ -280,7 +280,12 @@ for turn in fewshot: messages.append(turn)    # 示例追加在最后 ← 错
 - `sample_values` 这个工具存在，但没有任何东西强迫模型去调它——而它恰恰是针对
   大小写陷阱该起作用的机制。
 - 只有 6 道题能承载 `drop_distinct` 缺陷，而这偏偏是最高频的真实错误类型。
-- gold 全部来自模板，题面措辞比人写的整齐得多。同义改写缓解了，没根治。
+- gold 全部来自模板，题面措辞比人写的整齐得多。这条我量过了（`scripts/restability.py`）：
+  把基准判错的**全部** 21 道题用生成器自己的 4 种问法各跑一遍，**4 道换个说法就做对了**
+  ——pass@1 低估了 4/192 = 2.08pp。反向按族占比抽 22 道判对的题，**1 道换个说法就判错**
+  （4.5%，Wilson [0.8%, 21.8%]），折到头条是 1.0–4.0pp，取决于口径。
+  所以"一次问法"是一个样本、不是一个测量。第一次测成功侧我抽的是"每族第一题"，
+  19 题四种问法全对——那是零区分力，不是稳定性，做砸的那次产物也留在仓库里。
 - 单轮：不会追问、没有澄清、题面有歧义也照样答。
 
 ## 十一、复现
@@ -295,6 +300,9 @@ python scripts/calibrate.py             # 判分器校准：750 观测 / 0 false
 python scripts/significance.py          # p 值与噪声底，全部现算，不抄文档
 python -m sqlagent.figures              # -> docs/figures/*.svg（本文三张图的来源）
 python -m sqlagent.adversarial          # 26 条对抗探测（需要 key；--seed-tasks 可零花费只出题）
+python scripts/guard_corpus.py          # 护栏双向测量：120 条写语句 0 穿透 / 192 条 gold 读 0 误拒（$0）
+python scripts/restability.py --pick correct-representative --analyse-only
+                                        # 措辞噪声：读已存结果重印结论（$0）
 python -m sqlagent.report               # -> report.html，离线单文件，可点开每条 trace
 ```
 
