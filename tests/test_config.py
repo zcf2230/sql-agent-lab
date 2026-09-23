@@ -47,3 +47,26 @@ def test_every_listed_source_file_actually_exists():
 
 def test_settings_fingerprint_is_stable_within_a_process():
     assert Settings().config_hash() == Settings().config_hash()
+
+
+def test_the_requested_model_decides_the_endpoint(monkeypatch):
+    """`--model X` must not send X to whatever endpoint `.env` last pointed at.
+
+    A restability run tagged `deepseek-chat` reached DashScope's URL because
+    SQLAGENT_BASE_URL outranked the model name, so all 80 tasks got 404. The runner
+    withheld the score, which is the only reason this became a test instead of a
+    published number that was never produced by the model it named.
+    """
+    from sqlagent.config import MODEL_BASE_URLS, settings_from_env
+
+    monkeypatch.setenv("SQLAGENT_PROVIDER", "openai")
+    monkeypatch.setenv("SQLAGENT_MODEL", "qwen-flash")
+    monkeypatch.setenv("SQLAGENT_BASE_URL", "https://example.invalid/v1")
+    for model, url in MODEL_BASE_URLS.items():
+        s = settings_from_env(model=model)
+        assert s.base_url == url, f"{model} resolved against the .env endpoint"
+        assert s.model == model
+
+    # a model this table does not know keeps the explicit endpoint - the table must
+    # not become a second place that has to be edited before a new provider works.
+    assert settings_from_env(model="not-in-the-table").base_url == "https://example.invalid/v1"

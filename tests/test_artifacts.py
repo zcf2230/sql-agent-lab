@@ -70,3 +70,29 @@ def test_the_sweep_still_covers_every_defect_class():
     assert sum(per_mode.values()) >= 700, per_mode
     empty = [m for m, n in per_mode.items() if n == 0]
     assert not empty, f"defect classes with no testable observation: {empty}"
+
+
+RESTABILITY_PICKS = ["families", "failures", "correct-representative", "correct-boundary"]
+
+
+@pytest.mark.parametrize("pick", RESTABILITY_PICKS)
+def test_each_restability_run_has_its_own_artifact_and_is_the_run_it_claims(pick):
+    """Two `--pick` values used to write the same results file, and the second run
+    silently replaced a committed, published artifact - the numbers in `docs/HANDOFF.md`
+    §17 were briefly backed by a file describing a different set of questions. The name
+    now carries the pick, and this check re-joins each artifact to the task set it ran,
+    so a future overwrite fails a test instead of quietly republishing a document."""
+    root = RESULTS.parent
+    res, data = (root / "results" / f"restability-deepseek-chat-{pick}.jsonl",
+                 root / "data" / f"tasks_restability-{pick}.jsonl")
+    assert res.exists(), f"{res.name} missing: §17 quotes a result with no artifact"
+    assert data.exists(), f"{data.name} missing: the run cannot be re-derived"
+    rows_ = [json.loads(l) for l in res.read_text(encoding="utf-8").splitlines() if l.strip()]
+    body = [r for r in rows_[1:] if "id" in r]
+    assert {r["id"] for r in body} == {json.loads(l)["id"] for l in
+                                       data.read_text(encoding="utf-8").splitlines() if l.strip()}, \
+        f"{res.name} is not the run of {data.name}"
+    bases = {r["id"].split("#")[0] for r in body}
+    thin = [b for b in bases if sum(1 for r in body if r["id"].startswith(b + "#")) != 4]
+    assert not thin, f"asked fewer than four ways, so no stability rate: {thin}"
+    assert sum(r.get("cost_usd") or 0.0 for r in body) > 0, "a $0 run measured nothing"

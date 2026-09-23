@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -50,6 +51,21 @@ PRICING: dict[str, tuple[float, float]] = {
 }
 
 USD_PER_CNY = 7.2  # rough mid-2026 rate, only used for the CNY readout
+
+
+# Where each priced model actually lives. Same reason `PRICING` is keyed by model:
+# a run's endpoint must follow the model that was asked for. Before this table,
+# `.env`'s SQLAGENT_BASE_URL decided the endpoint and `--model` only decided the
+# label, so a run tagged `deepseek-chat` while .env still pointed at DashScope sent
+# `model=deepseek-chat` to Qwen's URL and got 404 on all 80 tasks. The runner caught
+# it (`harness_exceptions`, pass@1 withheld), which is the only reason this was a
+# wasted minute rather than a published number. Unknown models fall back to .env.
+MODEL_BASE_URLS: dict[str, str] = {
+    "deepseek-chat": "https://api.deepseek.com/v1",
+    "deepseek-reasoner": "https://api.deepseek.com/v1",
+    "qwen-flash": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "qwen-plus": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
 
 PROMPT_VERSION = "v1"  # bump whenever you edit the system prompt -> invalidates cache
 
@@ -179,13 +195,21 @@ def resolve_api_key(model: str = "") -> str:
 def settings_from_env(**overrides) -> Settings:
     load_env()
     kwargs: dict = {}
-    # the model decides which credential slot to open, so resolve it first
-    if os.environ.get("SQLAGENT_MODEL"):
-        kwargs["model"] = os.environ["SQLAGENT_MODEL"]
-    if key := resolve_api_key(kwargs.get("model", "")):
+    # The model is resolved first because it decides two things that must agree with
+    # it: which credential slot to open, and which endpoint to send to. `--model` used
+    # to be applied last, so both were taken from whatever provider .env pointed at.
+    model = overrides.get("model") or os.environ.get("SQLAGENT_MODEL") or ""
+    if model:
+        kwargs["model"] = model
+    if key := resolve_api_key(model):
         kwargs["api_key"] = key
-    if os.environ.get("SQLAGENT_BASE_URL"):
-        kwargs["base_url"] = os.environ["SQLAGENT_BASE_URL"]
+    env_base = os.environ.get("SQLAGENT_BASE_URL", "")
+    base = MODEL_BASE_URLS.get(model) or env_base
+    if base:
+        if env_base and model in MODEL_BASE_URLS and env_base != base:
+            print(f"[config] {model} 的端点以 MODEL_BASE_URLS 为准（{base}），"
+                  f"忽略 .env 里的 SQLAGENT_BASE_URL={env_base}", file=sys.stderr)
+        kwargs["base_url"] = base
     if os.environ.get("SQLAGENT_PROVIDER"):
         kwargs["provider"] = os.environ["SQLAGENT_PROVIDER"]
     kwargs.update({k: v for k, v in overrides.items() if v is not None})
