@@ -1,5 +1,7 @@
 # sql-agent-lab
 
+[![verify](https://github.com/zcf2230/sql-agent-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/zcf2230/sql-agent-lab/actions/workflows/ci.yml)
+
 A self-repairing Text-to-SQL agent **and the measurement rig around it**.
 
 The agent is the easy half. The part that actually decides whether any reported
