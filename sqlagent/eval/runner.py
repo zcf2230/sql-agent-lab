@@ -276,7 +276,7 @@ def main() -> int:
     summary = summarise(rows, settings)
     tag = args.tag or settings.tag()
     out = results_dir / f"{tag}.jsonl"
-    with out.open("w", encoding="utf-8") as fh:
+    with out.open("w", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps({"_summary": summary}, ensure_ascii=False) + "\n")
         for r in rows:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
