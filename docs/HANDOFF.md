@@ -294,10 +294,13 @@ wrote 3 figures -> docs\figures: ablation.svg, calibration.svg, trace.svg
 16 | §4.2 号称"逐字对照"，实际是我转写的（`OVERALL tested=750 ...` 这行从未被打印过） | 审阅者对不上格式，学不到任何东西 | 换成实跑粘贴的原文行 |
 17 | 校准产物把 `wall_ms` 与 `cached` 写进受版本管理的文件 | 审阅者照 §4.2 跑一遍 `calibrate.py`，6 个文件各 386 行全红 diff，"判分器有没有变"反而看不出来 | 产物只留判断字段；`tests/test_artifacts.py` 钉住；并逐行证明 1,152 条判定零变化 |
 18 | 校准产物 `_summary.model` 记的是当时 `.env` 里的默认模型 | committed 产物写 deepseek-chat、重跑变 qwen-flash，**而这场扫描根本没调用任何模型** | 写死为 `mock (judge under test; no model called)` |
+19 | 声称「三处不可能各说一套」，但 `report.py` 从没接入 `stats.py`，自己另算了一份**定义都不同**的噪声底 | 同一份材料里 2/192 与 4/192 并存，而 2/192 正是上一轮已判定偏乐观的值；**那句招牌话在我写下那一刻就是假的** | 删本地实现改 import；测试断言 `report` 不得再有 `noise_floor` 属性
+20 | 报告里没有 p 值、没有 CI、没有噪声底 | 简历称「最强的一行是主动写出 p=0.057 未达显著」，而招聘方最可能点开的那个产物里 `0.057` 出现 0 次 | 新增显著性一节；测试逐个断言每个 p 字符串都在报告里
+21 | **修 D1 时只改了展示**：改写 `_summary.model` 却没动 `config_hash` 对 `.env` 的依赖 | 比不修更糟——它把真正要查的东西藏起来了；我第一次「修完」复测仍 6 个文件脏才发现 | 在调用处 `--model` 钉死；全新 clone 复跑 §4.2 全命令，脏文件数 0
 
-**共同点**：18 个错误里 16 个不会导致崩溃，只会**产出一个看起来合理的错误数字**
-（或让一个本该能核对的产物变得无法核对）。
-这正是本项目全部设计针对的失效模式。
+**共同点**：21 个错误里 19 个不会导致崩溃，只会**产出一个看起来合理的错误数字**（或让一个本该能核对的产物变得无法核对）。这正是本项目全部设计针对的失效模式。
+
+
 
 ---
 
@@ -487,7 +490,7 @@ git rev-list --objects --all \
 |---|---|---|
 | ★1 噪声底两个数：`stats.py` 4/192=2.1pp，`report.html` 印 2/192 | 实测 `report.noise_floor()` → `2 / 192`；`stats.noise_floor()` → `4 / 192 = 2.1pp`；且 `report.py` **没有 import stats**。**根因比"漏了一个基线"更深**：report 那份算的是"任意基线间翻转的并集"，stats 算的是"最大两两差异"——**两个不同的量共用一个名字** | **改。** 删除 `report.py` 的本地实现，改 `from . import stats`；报告卡片现在直接印 `4/192 (2.1pp)` 并注明来源。回归测试 `test_report_does_not_own_a_second_noise_floor` 断言 `report` 模块**不再有** `noise_floor` 属性——下次有人再写第二份就红 |
 | ★2 报告里没有 p 值/CI/噪声底 | 实测 `report.html` 中 `0.057`/`p=`/`显著`/`Wilson`/`95%`/`2.1pp`/`McNemar` 出现次数**全为 0**。而 §4.1 让忙碌的审阅者"只打开这个文件"，`RESUME.md` 称"最强的一行是主动写出 p=0.057 未达显著" | **改。** 新增报告第 2 节「配对显著性」，由 `stats.all_comparisons()` 渲染 p/CI/修好弄坏/结论 + 噪声底卡片。测试 `test_generated_report_shows_the_significance_it_claims_to_be_honest_about` 逐个断言每个 p 值字符串都在报告里。**纪律必须活在交付物里，不只是散文里** |
-| ★3 跑完 §4.2 工作区变脏（D1） | 全新 clone 实测：`build_db`+`build_tasks` → 2 个文件脏；再 `calibrate` → **8 个文件脏**。逐行比对：192 行逐题判定**一字未动**，唯一变化是 `_summary.config_hash`（`7db55d0a`→`b843d47f`）。根因：`dataset_hash` 用原始字节，而 `code_hash()` 做了行尾归一并**在 docstring 里解释了为什么必须归一**——同一个坏味道修了 code 侧、漏了 dataset 侧 | **改。** ① 抽出 `runner.dataset_digest()` 并归一行尾；② 所有写受管理文本的地方显式 `newline="\n"`（build_tasks / adversarial / report / figures）。测试 `test_dataset_digest_ignores_line_endings` 用同一内容 CRLF/LF 两份文件断言摘要相同，并验证**旧写法确实会失败**（不是恒真断言）。**我上一轮说"重跑不再产生假 diff"是错的，只在特定顺序下成立——已撤回** |
+| ★3 跑完 §4.2 工作区变脏（D1） | 全新 clone 实测：`build_db`+`build_tasks` → 2 个文件脏；再 `calibrate` → **8 个文件脏**。逐行比对：192 行逐题判定**一字未动**，唯一变化是 `_summary.config_hash`（`7db55d0a`→`b843d47f`）。根因一：`dataset_hash` 用原始字节，而 `code_hash()` 做了行尾归一并**在 docstring 里解释了为什么必须归一**——同一个坏味道修了 code 侧、漏了 dataset 侧 | **改，两轮才修对。** ① 抽出 `runner.dataset_digest()` 并归一行尾；② 所有写受管理文本的地方显式 `newline="\n"`；③ 测试 `test_dataset_digest_ignores_line_endings` 断言同内容 CRLF/LF 摘要相同，并验证**旧写法确实会失败**（不是恒真断言）。**修完第一遍我在 clone 里复测，仍然 6 个文件脏**——查出第二层根因：`config_hash` 把 `model` 折进去了，而 `model` 来自 `.env`（作者机是 qwen-flash，clone 用默认值）。**我上一轮改的 `_summary.model` 只改写了显示，哈希里的环境依赖一点没动，等于把症状盖住、让原因更难被发现。** 现在在调用处 `--model mock-judge-sweep` 钉死，扫描不再读环境。最终实测：**全新 clone 跑完 §4.2 全部命令，脏文件数 = 0** |
 | ★4 简历算法版-4 等 1、2 修完再投 | 成立。简历写 2.1pp、报告链接印 2/192，是**同一份材料内部两个数字**，点开即拆 | **已按 1、2 修完**，两处现在同源。另在简历里补了聚类口径（见 ★5） |
 | ★5 D4：§3 硬编码计数全过期且与下一句矛盾 | 实测：声明 30 个 .py / 4,632 行 / 生产 3,754 / 测试 753 / README 333 / INTERVIEW 211 / ARTICLE 311 / RESUME 98 —— **八个数字，八个全错**（实际 36 / 5,361 / 4,110 / 1,059 / 434 / 248 / 335 / 117），而紧跟的那句就写着"不写死" | **改。** 整段删除，只留 `find`/`wc` 命令。**这不是第一次犯，也不是第二次**——本文件 §9 第 16 条记的就是同一类错误，说明"写下数字"这个动作本身需要被禁止而不是被提醒 |
 
@@ -602,3 +605,10 @@ git rev-list --objects --all \
 两条合起来是同一个失效：**我验证了实现存在，没有验证每个产物都在用它。**
 `tests/test_report_does_not_own_a_second_noise_floor` 这类断言（"report 不得再有自己那份"）
 才是这类问题的防线——不是"我写对了"，而是"写错时会红"。
+
+还有第三条，比前两条更该记住：**D1 我第一次是修坏的。** 我把 `_summary.model` 改写成
+"没有调用模型"，于是产物**看起来**不再依赖环境，但 `config_hash` 照样把 `.env` 里的
+model 折进去，clone 里复测仍然 6 个文件脏。**改了展示、没改成因，比不改更糟——它把
+下一次要查的东西藏起来了。** 是在自己按文档流程复测第二遍时才暴露的。
+教训：**修完必须在"别人的机器"上复跑一遍验证流程，而不是在自己这台、
+恰好已经处于某个状态的树上跑。**
