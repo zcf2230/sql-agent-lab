@@ -74,7 +74,6 @@ def test_the_sweep_still_covers_every_defect_class():
 
 RESTABILITY_PICKS = ["families", "failures", "correct-representative", "correct-boundary"]
 
-
 @pytest.mark.parametrize("pick", RESTABILITY_PICKS)
 def test_each_restability_run_has_its_own_artifact_and_is_the_run_it_claims(pick):
     """Two `--pick` values used to write the same results file, and the second run
@@ -96,3 +95,20 @@ def test_each_restability_run_has_its_own_artifact_and_is_the_run_it_claims(pick
     thin = [b for b in bases if sum(1 for r in body if r["id"].startswith(b + "#")) != 4]
     assert not thin, f"asked fewer than four ways, so no stability rate: {thin}"
     assert sum(r.get("cost_usd") or 0.0 for r in body) > 0, "a $0 run measured nothing"
+
+
+def test_no_ad_hoc_script_survives_in_the_root_or_in_scripts():
+    """Two scratch scripts (`hd.py`, a doc-editing one-off; `stat_check.py`, an ad-hoc
+    aggregation since absorbed into `stats.cluster_sensitivity`) were committed and
+    published, referenced by nothing. A reviewer reads the repository root as the
+    project's shape, so a one-off sitting there reads as part of the design - which is
+    the same defect as a results file nothing regenerates, just in code instead of data.
+    """
+    root = RESULTS.parent
+    strays = sorted(p.name for p in root.glob("*.py"))
+    assert not strays, f"scratch scripts in the repo root: {strays}"
+
+    docs = "\n".join(p.read_text(encoding="utf-8")
+                     for p in [root / "README.md", *sorted((root / "docs").glob("*.md"))])
+    orphans = [p.name for p in sorted((root / "scripts").glob("*.py")) if p.name not in docs]
+    assert not orphans, f"scripts/ files no document tells anyone to run: {orphans}"
