@@ -140,6 +140,26 @@ def _bird_carriers():
             ("ARTICLE", article), ("INTERVIEW", interview), ("report.html §5", section)]
 
 
+def test_the_aggregation_p_range_in_prose_is_the_one_stats_computes():
+    """Three carriers said "按骨架聚合后 p 在 0.023–0.227". The upper end is right and the
+    lower end is not: the three defensible aggregations give 0.0574 / 0.2266 / 0.0391, and
+    0.023 is a *different* statistic (cluster-level Wilcoxon with continuity correction)
+    that someone copied into the wrong sentence. One of the three sites is the interview
+    line in the resume, which is the hardest place in the repo to notice drift."""
+    from sqlagent import stats
+
+    ps = [r["p_value"] for r in stats.cluster_sensitivity("abl2-baseline", "abl2-3shot")]
+    want = f"{min(ps):.3f}–{max(ps):.3f}"
+    offenders = []
+    for name, text in [("HANDOFF", HANDOFF), ("RESUME", RESUME), ("README", README),
+                       ("REVIEW_TEMPLATE", (ROOT / "docs" / "REVIEW_TEMPLATE.md").read_text(encoding="utf-8"))]:
+        for m in re.finditer(r"p 在 \*{0,2}([\d.]+)–([\d.]+)\*{0,2} 之间跨过 0\.05", text):
+            if f"{m.group(1)}–{m.group(2)}" != want:
+                line = text[:m.start()].count(chr(10)) + 1
+                offenders.append(f"{name}:{line} 写 {m.group(1)}–{m.group(2)}，实测 {want}")
+    assert not offenders, "聚合口径的 p 区间与 stats 不一致：" + chr(10).join(offenders)
+
+
 def test_the_mistake_log_stays_numbered_in_order():
     """§9 promises "完整" and tells a reviewer to count the rows and check the numbering is
     continuous. That promise is only worth what a test makes it worth: appending a row
