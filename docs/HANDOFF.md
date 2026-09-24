@@ -254,7 +254,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 别名绕过被拦 | `runs/*.jsonl` 中 `catalog-02` 的两次尝试 | 报告里搜 `sqlite_schema` |
 缓存随判分器源码失效 | `config.py:61` + `:146` | `tests/test_config.py::test_code_digest_ignores_line_endings` |
 单种问法的分数含措辞噪声（低估 1.30–2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样；两侧同口径） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl`；同一份实现渲染在 `report.html` 第 3 节 | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
-判分器在公开基准上仍然自洽，且公开 EX 有可量化的盲区 | `results/bird-judge.jsonl`（120 题 × 6 类注入，460 观测）；官方比较规则取自 `bird-bench/mini_dev` 的 `evaluation_ex.py:20`，其语义由 `tests/test_bird_judge.py` 钉住 | `python scripts/bird_judge.py`（$0，需先按脚本头注释下载 BIRD dev）；判分器改动是否影响已发表判定由 `python scripts/rejudge.py` 回答（$0） |
+判分器在公开基准上仍然自洽，且公开 EX 有可量化的盲区 | `results/bird-judge.jsonl`（120 题 × 6 类注入，460 观测）；官方比较规则取自 `bird-bench/mini_dev` 的 `evaluation_ex.py:20`，其语义由 `tests/test_bird_judge.py` 钉住 | `python scripts/bird_judge.py`（$0，需先按脚本头注释下载 BIRD dev）；判分器改动是否影响已发表判定由 `python scripts/rejudge.py` 回答（$0），并且它现在是 CI 的一步：有翻转就红，不再是一次性测量 |
 自制基准的 89.1% 与公开基准的 41.7% 同时成立，且**低分不是判分器造成的** | `results/bird-agent.jsonl`（60 题逐题）+ `results/bird-agent-official.jsonl`（同一批答案在两套口径下的判定，0 分歧） | `python scripts/bird_tasks.py --dev-dir ../.external/dev --per-tier 20` 出题 → `python -m sqlagent.eval.runner --tasks data/tasks_bird-60.jsonl --db-root ../.external/dev --tag bird-agent`（$0.0753）→ `python scripts/bird_judge.py --answers results/bird-agent.jsonl`（$0） |
 无效运行不出分 | `runner.py:132` | `tests/test_runner.py::test_a_run_that_crashes_is_not_reported_as_a_low_score` |
 
@@ -352,6 +352,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 | ✅ | 11 | **让 agent 真跑 BIRD**：60 题、11 个真实库、同一份配置，$0.0753 | §19 只证明判分器可信，但"你的基准 89%"这句话真正的软肋是**题是我造的**；只有一个公开基准上的分数能回答它，而且必须先证明低分不是判分器背锅（`--answers` 那次 0 分歧） | 实花 **$0.0753**（≈¥0.54，即 $0.00126/题；先跑 12 题试算定规模，那次产物未保留，所以不给它配数字） |
 | ✅ | 2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | 实花 **$0.0669**（≈¥0.48，比预估的 ¥1.2 便宜；单价来自 26 条那次的存档） |
 | ✅ | 12 | 把 §21.4 记下的那个洞关掉：函数名也走白名单 | 记录归属是诚实，但洞本身没有理由留着——而且它属于"主防线管不到、恰好有东西兜底"那一类，正是这个项目从头批评的形状 | ¥0（192 + 1,534 条 gold 双向量过，0 误拒；`rejudge.py` 0 翻转） |
+| ✅ | 13 | 把 `rejudge.py` 变成 CI 门禁 + 给它第一条单测 | "改了判分器，公布数字动没动"这句话原本只由我本机的一次运行支撑；判分是纯函数，没理由不在每次 push 上强制。单测钉的是**范围判定**（208 题旧运行 out of scope、`require_order` 变化算数据集漂移、calib/bird 产物不参与）——那正是它第一版搞错、差点让我发布假结论的地方 | ¥0 |
 | ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
 | ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
 

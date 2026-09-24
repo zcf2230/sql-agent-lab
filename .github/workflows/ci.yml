@@ -77,6 +77,12 @@ jobs:
           uv run python scripts/restability.py --pick correct-boundary --analyse-only
           git diff --exit-code
 
+      # "改了判分器，公布的数字还算数吗" used to be a sentence backed by one local
+      # measurement. Re-grading is a pure function over committed answers, so it can be a
+      # property this build enforces on every push instead.
+      - name: published verdicts must not move under the current judge
+        run: uv run python scripts/rejudge.py
+
       - name: show what a reviewer would see
         if: always()
         run: uv run python scripts/significance.py
