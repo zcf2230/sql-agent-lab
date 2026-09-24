@@ -127,6 +127,45 @@ def classify(sql: str) -> str:
         return "rejected: UNPARSEABLE (fail-closed, not allowlist credit)"
 
 
+
+# Read-shaped statements that ask SQLite for filesystem or code access. The AST whitelist
+# cannot see these - its contract is statement shape, and every one of them is a SELECT -
+# so the "0 穿透" figure above must not be read as "the whitelist stops them". Each is run
+# on the same read-only connection the agent gets, and whatever stops it gets named.
+_SIDE_EFFECT_CALLS = [
+    ("writefile", lambda probe: f"SELECT writefile('{probe.as_posix()}', 'pwned')"),
+    ("readfile", lambda probe: f"SELECT readfile('{probe.as_posix()}')"),
+    ("eval", lambda probe: "SELECT eval('SELECT 1')"),
+    ("load_extension", lambda probe: "SELECT load_extension('vec0')"),
+]
+
+
+def side_effect_layers(db_path: Path) -> list[dict]:
+    import sqlite3
+    import tempfile
+
+    out = []
+    for name, build in _SIDE_EFFECT_CALLS:
+        probe = Path(tempfile.gettempdir()) / f"sql_agent_lab_guard_probe_{name}.tmp"
+        probe.unlink(missing_ok=True)
+        sql = build(probe)
+        guard = classify(sql)
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        try:
+            conn.execute(sql).fetchall()
+            ran, err = True, ""
+        except Exception as exc:
+            ran, err = False, f"{type(exc).__name__}: {exc}"[:52]
+        finally:
+            conn.close()
+        touched = probe.exists()
+        if touched:
+            probe.unlink()
+        out.append({"function": name, "guard": guard, "executed": ran,
+                    "error": err, "touched_disk": touched})
+    return out
+
+
 def main() -> int:
     writes = write_corpus()
     reads = legal_reads()
@@ -157,7 +196,26 @@ def main() -> int:
           f"{unparseable} 条是 sqlglot 根本解析不了、被 fail-closed 挡下。")
     print("后者安全，但不算白名单的功劳 - 把「兜底机制生效」记成「主防线挡住了写语句」，")
     print("就是第一轮记录过的那类错误（方言巧合替 AST 层兜底，而卖点写的是白名单）。")
-    return 1 if leaked or false_rejects or len(reads) != 192 else 0
+    db = ROOT / "data" / "learning_platform.db"
+    unguarded = []
+    if db.exists():
+        layers = side_effect_layers(db)
+        print()
+        print("读形状、但有文件系统/代码语义的调用（**白名单看不见它们**，因为它的契约是语句形状）：")
+        for row in layers:
+            stopped = ("AST 白名单" if row["guard"] != "leaked"
+                       else ("SQLite 构建 / 驱动" if not row["executed"] else "没人拦住"))
+            print(f"   {row['function']:<15} 白名单={row['guard']:<10} "
+                  f"执行={'跑通了' if row['executed'] else row['error']:<52} "
+                  f"落盘={'是' if row['touched_disk'] else '否'}  -> 拦住它的是：{stopped}")
+            if row["guard"] == "leaked" and (row["executed"] or row["touched_disk"]):
+                unguarded.append(row["function"])
+        print("      这一节的意义是把功劳记在正确的防线上：前两个 0 是白名单的成绩，"
+              "这几个不是。")
+
+    if unguarded:
+        print(f"[FAIL] 这些调用既没被白名单拦住、也真的执行了：{unguarded}")
+    return 1 if leaked or false_rejects or len(reads) != 192 or unguarded else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
