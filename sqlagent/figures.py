@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 
 from . import stats
-from .report import read_jsonl
+from .report import CALIB_ORDER, MODE_LABELS, read_jsonl
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "figures"
@@ -108,7 +108,7 @@ def calibration_svg() -> str:
         lines = read_jsonl(ROOT / "results" / f"calib-{mode}.jsonl")
         body_rows = [r for r in lines[1:] if "id" in r]
         tested = [r for r in body_rows if r.get("result_changed") is not None and not r.get("trivial")]
-        po = mode == "reorder_cols"
+        po = mode in stats.PRESENTATION_ONLY_MODES
         agree = sum(1 for r in tested if r["correct"] == (po or not r["result_changed"]))
         rows.append((mode, len(tested), agree, len(tested) - agree))
         total += len(tested)
@@ -138,6 +138,56 @@ def calibration_svg() -> str:
     return _svg(w, h, body, "Grader calibration sweep")
 
 
+def bird_svg() -> str:
+    """Where my judge and the public benchmark's own comparison rule part ways - both ways.
+
+    A single "my judge is stricter" bar would be the same one-sided move this project
+    keeps getting reviewed for, so each row is a stacked track: agreement, then the cases
+    the public rule cannot see, then the cases where my policy is the looser one.
+    """
+    lines = read_jsonl(ROOT / "results" / "bird-judge.jsonl")
+    if not lines:
+        return ""
+    s = lines[0].get("_summary") or {}
+    per = s.get("per_mode") or {}
+    modes = [m for m in CALIB_ORDER if m in per]
+    maxn = max((per[m]["checked"] for m in modes), default=1) or 1
+
+    w, h = 980, 148 + len(modes) * 62 + 36
+    body = _t(20, 34, "同一个判分器，搬到别人写的题上（BIRD dev）", 16, INK, weight="600")
+    body += _t(20, 56, f"{s.get('questions_selected', 0)} 道人写 gold、{s.get('databases', 0)} 个真实库、"
+                       f"{s['checked']} 条注入观测；条长按可比观测数缩放", 12, DIM)
+    body += _t(20, 78, "蓝＝与公开口径一致", 11, NEUTRAL)
+    body += _t(200, 78, "红＝公开口径看不见（我判错）", 11, BAD)
+    body += _t(470, 78, "橙＝我比公开口径宽松", 11, AMBER)
+    body += _t(940, 78, "gold 判 gold", 11, DIM, "end")
+    body += _t(940, 96, f"{s.get('gold_self_correct', 0)}/{s.get('questions_selected', 0)}",
+               13, GOOD if not s.get("gold_self_wrong") else BAD, "end", "600")
+
+    left, right = 260, 700
+    y = 128
+    for m in modes:
+        d = per[m]
+        n = d["checked"]
+        body += _t(20, y + 16, m, 13, INK)
+        body += _t(20, y + 36, MODE_LABELS.get(m, ""), 11, DIM)
+        unit = (right - left) / maxn
+        x = left
+        for value, colour in ((d["public_agree"], NEUTRAL), (d["mine_strict"], BAD),
+                              (d["mine_lenient"], AMBER)):
+            if not value:
+                continue
+            bw = value * unit
+            body += f'<rect x="{x:.1f}" y="{y+4}" width="{bw:.1f}" height="26" rx="3" fill="{colour}"/>'
+            x += bw
+        body += _t(right + 16, y + 16, f"可比 {n}", 12, INK)
+        body += _t(right + 16, y + 36, f"看不见 {d['mine_strict']} · 我更宽 {d['mine_lenient']}",
+                   11, DIM)
+        y += 62
+    body += _t(20, y + 18, '分歧两个方向都有：不拿"官方看不见重复行"冒充"我的判分器更好"', 12, DIM)
+    return _svg(w, h, body, "Grader vs the public benchmark's own comparison rule")
+
+
 def trace_svg() -> str:
     """Draw one real failing task's actual step chain, straight from the trace file."""
     lines = read_jsonl(ROOT / "results" / "abl2-baseline.jsonl")
@@ -156,10 +206,17 @@ def trace_svg() -> str:
               f"(runs/ is gitignored); see report.html for the replay")
         return ""
     trace = None
+    skipped = 0
     for line in trace_file.read_text(encoding="utf-8").splitlines():
-        rec = json.loads(line)
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            skipped += 1  # an interleaved half-record; report.py discloses the count
+            continue
         if rec.get("task_id") == task_id:
             trace = rec
+    if skipped:
+        print(f"  trace.svg: {skipped} unparseable line(s) in {trace_file.name}")
     if trace is None:
         return ""
 
@@ -202,7 +259,7 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     made = []
     for name, render in (("ablation.svg", ablation_svg), ("calibration.svg", calibration_svg),
-                         ("trace.svg", trace_svg)):
+                         ("bird.svg", bird_svg), ("trace.svg", trace_svg)):
         svg = render()
         if not svg:
             print(f"skipped {name}: no input data")

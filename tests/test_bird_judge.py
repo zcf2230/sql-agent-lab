@@ -1,0 +1,77 @@
+"""The two comparators this project now runs side by side, pinned by case.
+
+`scripts/bird_judge.py` reports where our judge and the public-benchmark rule disagree.
+That report is only worth anything if both sides are what we say they are, so each rule
+is nailed down here with the smallest case that separates it from the others. The
+public rule is deliberately the coarse one (set semantics), because the finding under
+test is that it cannot see duplicate rows - and a claim about someone else's blind spot
+had better not rest on a misreading of their comparator.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from sqlagent.eval.scoring import Execution, score_execution  # noqa: E402
+
+spec = importlib.util.spec_from_file_location("bird_judge", ROOT / "scripts" / "bird_judge.py")
+bird = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bird)
+
+
+def ex(columns, rows):
+    return Execution(ok=True, columns=list(columns), rows=[list(r) for r in rows])
+
+
+# ---- the public rule: set semantics -------------------------------------------------
+
+def test_public_rule_cannot_see_duplicate_rows():
+    """This is the blind spot the experiment is about, stated as a unit: dropping a
+    DISTINCT adds rows, and a set comparison still calls it equal."""
+    gold = [[1], [2]]
+    assert bird.public_verdict(gold, gold + [[1]]) is True, \
+        "set() deduplicates, so a duplicate-row bug is invisible to the public metric"
+
+
+def test_public_rule_is_blind_to_row_order_but_not_to_column_order():
+    assert bird.public_verdict([[1, 2], [3, 4]], [[3, 4], [1, 2]]) is True, "row order ignored"
+    assert bird.public_verdict([[1, 2]], [[2, 1]]) is False, \
+        "columns are compared positionally, so a permutation is a difference"
+
+
+# ---- our rule: name-aligned, multiset, order per question --------------------------
+
+def test_ours_accepts_the_column_permutation_the_public_rule_rejects():
+    gold = ex(["course_id", "n"], [[10, 3]])
+    pred = ex(["n", "course_id"], [[3, 10]])
+    assert score_execution(gold, pred, require_order=False).correct is True
+    assert bird.public_verdict(gold.rows, pred.rows) is False
+
+
+def test_ours_rejects_the_duplicate_row_the_public_rule_accepts():
+    gold = ex(["city"], [["Beijing"], ["Shanghai"]])
+    pred = ex(["city"], [["Beijing"], ["Beijing"], ["Shanghai"]])
+    assert score_execution(gold, pred, require_order=False).correct is False
+    assert bird.public_verdict(gold.rows, pred.rows) is True
+
+
+def test_ours_and_public_agree_on_the_happy_path_and_on_a_missing_row():
+    gold = ex(["x"], [[1], [2]])
+    assert score_execution(gold, gold, require_order=False).correct is True
+    assert bird.public_verdict(gold.rows, gold.rows) is True
+    missing = ex(["x"], [[1]])
+    assert score_execution(gold, missing, require_order=False).correct is False
+    assert bird.public_verdict(gold.rows, missing.rows) is False
+
+
+def test_the_documented_public_rule_is_the_one_the_code_implements():
+    """`PUBLIC_RULE` is quoted in the report and in the docs. If the function and the
+    sentence ever disagree, the sentence has to fail here, not in a review."""
+    assert bird.PUBLIC_RULE == "set(gold_rows) == set(pred_rows), order- and duplicate-blind"
+    assert bird.public_verdict([[1], [1]], [[1]]) is True, "duplicates collapse"
+    assert bird.public_verdict([[1]], [[2]]) is False

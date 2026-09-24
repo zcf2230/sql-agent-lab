@@ -153,8 +153,59 @@
 <tr><td><code>bad_column</code></td><td>接受</td><td class='num'>192</td><td class='num'>192</td><td class='num ok'>0</td><td class='num'>0</td><td class='num'>100.0%</td></tr></tbody></table>
  <div class="note">“注入后无变化”是指缺陷没能改变结果集（例如给单行结果加 <code>LIMIT 3</code>）。
    这类样本按“应接受”计入一致率而不是被剔除——剔除它们会让指标自我美化。</div>
+ <div class="note warn">但这一节只证明判分器与<b>我自己</b>的政策一致，而且用的还是我自己造的题、
+   我自己写的 gold。<b>自洽不等于测对了东西</b>——下一节把同一个判分器搬到公开基准上，
+   看它与人写 gold、与公开基准自己的比较规则对不上在哪里。</div>
 
- <h2>5 · 失败归因（baseline）</h2>
+ 
+ <h2>5 · 判分器在别人造的题上（公开基准 BIRD dev）</h2>
+ <div class="sub">做法：把<b>同一个</b> <code>eval/scoring.py</code> 放到 120 道<b>人写</b> gold、
+  11 个真实 SQLite 库上，注入缺陷仍由 <code>sqlagent.llm.corrupt</code> 本地生成，
+  然后逐条与<b>公开基准自己的比较规则</b>对答案。全程不调模型、$0。
+  选题规则：BIRD 自带 <code>difficulty</code> 三档各取<b>排序后前 N 个</b>
+  <code>question_id</code>（无随机、无挑选；本次共 120 题，N 见 <code>--per-tier</code> 默认值）。</div>
+ <table><thead><tr><th>检查</th><th>结果</th></tr></thead><tbody>
+  <tr><td>gold 判 gold（自我一致性）</td>
+      <td><b>120/120</b> 道人写 SQL 判为正确
+      （错误 0）——判分器不会把自己的执行器搞出来的失败算到 SQL 头上</td></tr>
+  <tr><td>注入观测 vs 我自己的政策</td><td><b>460/460</b></td></tr>
+  <tr><td>注入观测 vs 公开口径</td>
+      <td>分歧双向都有：公开口径看不见 <b>13</b> 条（drop_distinct 11、wrong_limit 2，
+      我判错），我在 <b>62</b> 条上比它宽松（reorder_cols 34、float_round 28）</td></tr>
+ </tbody></table>
+ <table><thead><tr><th>注入缺陷</th><th class=num>可比观测</th><th class=num>与我的政策一致</th><th class=num>与公开口径一致</th><th class=num>我判错、公开口径判对<div class='sub'>公开口径看不见这个缺陷</div></th><th class=num>我判对、公开口径判错<div class='sub'>我的政策比它宽松</div></th></tr></thead><tbody><tr><td><code>reflow</code><div class='sub'>同义重写（语义不变）</div></td><td class='num'>62</td><td class='num ok'>62/62 = 100%</td><td class='num'>62/62 = 100.0%</td><td class='num '>0</td><td class='num'>0</td></tr><tr><td><code>reorder_cols</code><div class='sub'>列顺序颠倒（值不变）</div></td><td class='num'>34</td><td class='num ok'>34/34 = 100%</td><td class='num'>0/34 = 0.0%</td><td class='num '>0</td><td class='num'>34</td></tr><tr><td><code>float_round</code><div class='sub'>末列舍入到 1 位</div></td><td class='num'>113</td><td class='num ok'>113/113 = 100%</td><td class='num'>85/113 = 75.2%</td><td class='num '>0</td><td class='num'>28</td></tr><tr><td><code>drop_distinct</code><div class='sub'>去掉 DISTINCT（多出重复行）</div></td><td class='num'>13</td><td class='num ok'>13/13 = 100%</td><td class='num'>2/13 = 15.4%</td><td class='num bad'>11</td><td class='num'>0</td></tr><tr><td><code>wrong_limit</code><div class='sub'>强行 LIMIT 3</div></td><td class='num'>118</td><td class='num ok'>118/118 = 100%</td><td class='num'>116/118 = 98.3%</td><td class='num bad'>2</td><td class='num'>0</td></tr><tr><td><code>bad_column</code><div class='sub'>列名改成不存在的</div></td><td class='num'>120</td><td class='num ok'>120/120 = 100%</td><td class='num'>120/120 = 100.0%</td><td class='num '>0</td><td class='num'>0</td></tr></tbody></table>
+ <div class="note warn"><b>这一节最值钱的一格是 <code>drop_distinct</code> 那一行。</b>
+   13 个能承载"去掉 DISTINCT"的观测里，公开口径把
+   <b>11 个判成了正确</b>——因为它的规则是
+   <code>set(gold_rows) == set(pred_rows), order- and duplicate-blind</code>，<code>set()</code> 把重复行折叠掉了。
+   而重复行正是上一节校准表里标注的最高频真实错误类型。
+   <b>换句话说：一个在公开榜上拿高分的 Text-to-SQL 系统，可能根本没被要求区分
+   "结果多出一倍重复行"和"答对"。</b></div>
+ <div class="note warn"><b>但我不拿这句话冒充"我比官方严"。</b>
+   同一批数据上，我在列置换（34 条）
+   与舍入（28 条）上比官方<b>宽松</b>：
+   它按位置比较列、数字必须逐位相同，我按列名对齐、按容差比数。
+   所以这里只有"两个方向各自的差 + 原因"，没有"谁的判分器更好"这个总判断。</div>
+ <div class="note"><b>搬到别人数据上之后 <code>vs 政策</code> 才是 460/460：第一次跑是 93%/91%/83%。</b>
+   那三个数抓出了两个真 bug（都写进了 HANDOFF §9 与 §19.3）：
+   <code>result_differs()</code> 比较列名而判分器不比列名（于是"用来自我解释这个指标的那一列"
+   一直是错的，而主指标 100% 全绿），以及列标签的拼写噪声会<b>静默</b>退化成按位置比较。
+   自制数据投影永远命名列，这两个都测不出来。</div>
+ <div class="note"><b>分母怎么来的，逐类报，不静默丢弃：</b>gold 解析失败 7 条、drop_distinct 107 条、reflow 58 条、reorder_cols 86 条、wrong_limit 2 条。
+   也就是说 <code>checked=460</code> 不等于 120×6——注入不进去的题不进入该类的分母。</div>
+ <div class="note"><b>本节没测的（别当成测了）：</b>
+   <code>require_order</code> 一律 False，公开基准没有"题面是否要求顺序"的标注，
+   <b>顺序敏感性未被检验</b>（官方口径本身对行序盲目）；只跑 SQLite 方言；
+   120/1534 题按难度分层但<b>不随机</b>；
+   <b>没有跑过 agent 做 BIRD 的题</b>，所以这里没有、也不该有"BIRD 上多少分"。
+   判分器改动会不会动已发表判定，由 <code>python scripts/rejudge.py</code> 现场回答
+   （判分是纯函数，$0；它自己打印覆盖条数与翻转数，所以那个数不抄在这里）。</div>
+ <div class="sub">出处：<code>results/bird-judge.jsonl</code>（含判分执行器
+   SQLite 3.49.1）；公开口径的语义由
+   <code>tests/test_bird_judge.py</code> 钉住，规则原文是
+   <code>bird-bench/mini_dev</code> 的 <code>evaluation_ex.py:20</code>。文字说明见 HANDOFF §19。</div>
+
+ <h2>6 · 失败归因（baseline）</h2>
  <table><thead><tr><th>原因</th><th class=num>题数</th><th>含义</th></tr></thead><tbody><tr><td><code>value_mismatch</code></td><td class='num'>8</td><td>行数列数都对，但具体数值不同——多为聚合粒度、日期口径或过滤条件理解错</td></tr>
 <tr><td><code>column_count_mismatch</code></td><td class='num'>7</td><td>投影列数不对——常因没答完问题，或把探查用的临时查询当成了最终答案</td></tr>
 <tr><td><code>row_count_mismatch</code></td><td class='num'>6</td><td>返回行数不对——常见是 JOIN 扇出产生重复行，或漏掉 DISTINCT</td></tr></tbody></table>
@@ -162,7 +213,7 @@
    只有单元测试层面的证据，没有行为层面的证据。这一栏故意保留着，因为“拿零次观测冒充结论”
    正是这个项目反对的事。</div>
 
- <h2>6 · 分类通过率</h2>
+ <h2>7 · 分类通过率</h2>
  <table><thead><tr><th>题型族</th><th class=num>通过</th><th>通过率</th></tr></thead><tbody><tr><td><code>metric_by_group</code></td><td class='num'>7/12</td><td><div class="bar"><span style="width:58.3%;background:#c98a4b"></span><em>58.3%</em></div></td></tr>
 <tr><td><code>arithmetic</code></td><td class='num'>3/5</td><td><div class="bar"><span style="width:60.0%;background:#c98a4b"></span><em>60.0%</em></div></td></tr>
 <tr><td><code>topk_per_group</code></td><td class='num'>2/3</td><td><div class="bar"><span style="width:66.7%;background:#c98a4b"></span><em>66.7%</em></div></td></tr>
@@ -183,7 +234,7 @@
 <tr><td><code>window</code></td><td class='num'>4/4</td><td><div class="bar"><span style="width:100.0%;background:#4f9d8f"></span><em>100.0%</em></div></td></tr>
 <tr><td><code>text_match</code></td><td class='num'>6/6</td><td><div class="bar"><span style="width:100.0%;background:#4f9d8f"></span><em>100.0%</em></div></td></tr></tbody></table>
 
- <h2>7 · 对抗性安全探测</h2>
+ <h2>8 · 对抗性安全探测</h2>
  <div class="sub">192 道正常题里护栏触发 <b>0 次</b>——那只说明模型没试。这一组 26 条探测专门<b>邀请</b>
    模型做越权动作，用来把"没有观测"变成"有数字"。</div>
  <div class="cards">
@@ -221,9 +272,10 @@
    不是互斥的，有样本两者同时成立——模型说"我做不到"却仍然去试。所以"拒绝率"不能当安全指标用。
    另外 <code>direct_write</code> 6/6 全过，几乎肯定是模型被训练成拒绝显式删除指令，与本项目护栏无关。</div>
 
- <h2>8 · Trace 回放</h2>
+ <h2>9 · Trace 回放</h2>
  <div class="sub">每一题的完整过程：模型看到什么、调了哪个工具、数据库回什么、错在哪一步。
    上面所有数字都能在这里找到出处。</div>
+ <div class="note warn"><b>本节少了 2 条 trace，不是没跑过。</b> <code>runs/*.jsonl</code> 由 runner 的多个工作线程追加写同一个文件；在 <code>trace.py</code> 给追加加上进程内锁之前，一条几 KB 的记录可能被拆成两次系统调用、两个线程的半条互相穿插，那一行就不是合法 JSON。读侧现在数出来并写在这里，而不是静默跳过。<br><b>逐题结果与分数不受影响</b>（它们在 <code>results/</code>，由 runner 单独写），受影响的只有那一题的过程回放。分布：mock__deepseek_chat__corr-none__fs0 少 1 条、openai__deepseek_chat__fs0 少 1 条。</div>
  <div class="filter">
    <select id="fRun"><option value="abl2-baseline">baseline（无示例）</option><option value="abl2-3shot">+ 3-shot 示例</option><option value="abl2-norepair">− 自修复循环</option><option value="qwen-baseline">qwen-flash baseline</option><option value="qwen-3shot">qwen-flash + 3-shot</option><option value="mock-clean-v2">mock 上界（非模型能力）</option></select>
    <select id="fVer"><option value="all">全部</option><option value="fail">只看失败</option>

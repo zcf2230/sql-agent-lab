@@ -43,7 +43,10 @@ MODES = {
 }
 
 # Differences that are presentation only and therefore must still score correct.
-PRESENTATION_ONLY = {"reorder_cols"}
+# Imported, not restated: this was the third independent copy of the policy after
+# `report.py` and the artifact test each had their own (round four, F10), and only one
+# of them had been updated when `reflow` joined the class.
+from sqlagent.stats import PRESENTATION_ONLY_MODES as PRESENTATION_ONLY
 
 # Passed to the runner so the sweep does not inherit a model from .env, and written
 # into the artifact so the artifact says what actually happened: no model was called.

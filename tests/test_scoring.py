@@ -7,7 +7,7 @@ silently inflate or deflate the score.
 
 from __future__ import annotations
 
-from sqlagent.eval.scoring import Execution, Verdict, score_execution
+from sqlagent.eval.scoring import Execution, Verdict, result_differs, score_execution
 
 
 def ex(*rows, columns=None):
@@ -99,3 +99,57 @@ def test_broken_gold_is_blamed_on_the_benchmark_not_the_model():
 def test_failing_prediction_reports_its_error_kind():
     v = score_execution(ex((1,)), Execution(ok=False, error="no such column: foo", error_type="operational_error"))
     assert not v.correct and v.reason == "pred_operational_error"
+
+
+# --- two inconsistencies found by putting the judge on BIRD's real databases -----------
+# (`scripts/bird_judge.py`; question ids are BIRD dev ids so the case can be re-pulled)
+
+
+def test_bird_q94_a_column_label_with_different_whitespace_still_aligns():
+    """BIRD dev q94 (`financial`): re-serialising an unnamed expression column turns
+    `( SELECT MAX(A11) - MIN(A11) FROM district )` into `(SELECT …)`. Exact label
+    matching failed, alignment silently degraded to positional, and a column order the
+    policy says to accept was judged a wrong answer."""
+    gold = Execution(ok=True, columns=["account_id", "( SELECT MAX(A11) - MIN(A11) FROM district )"],
+                     rows=[[6, 4431]])
+    pred = Execution(ok=True, columns=["(SELECT MAX(A11) - MIN(A11) FROM district)", "account_id"],
+                     rows=[[4431, 6]])
+    v = score_execution(gold, pred, require_order=False)
+    assert v.correct, f"label spelling noise defeated the alignment: {v.reason}"
+    assert not result_differs(gold, pred)
+
+
+def test_bird_q1_column_names_are_not_part_of_a_changed_result():
+    """BIRD dev q1 (`california_schools`): the injected rewrite re-quoted
+    `` `Free Meal Count (Ages 5-17)` `` into the SQL-standard double-quote form. Every
+    row was identical, yet `result_differs` called it a changed result because it
+    compared column labels the judge does not compare. That column of the calibration
+    table answers "did the defect reach the answer", so it must use the judge's own
+    notion of the same answer - one definition, not two."""
+    gold = Execution(ok=True, columns=["`Free Meal Count` / `Enrollment`"], rows=[[0.043478260869565216]])
+    pred = Execution(ok=True, columns=['"Free Meal Count" / "Enrollment"'], rows=[[0.043478260869565216]])
+    assert score_execution(gold, pred, require_order=False).correct
+    assert not result_differs(gold, pred), "a name-only difference is not a material difference"
+
+
+def test_bird_q62_integer_one_and_float_one_are_the_same_answer():
+    """ROUND(COUNT(*), 1) returns 1.0 where the gold returns the integer 1. The judge
+    already agreed via the shared value normalisation; the recorder of
+    `result_changed` disagreed, because its own key path differed from the judge's."""
+    gold = Execution(ok=True, columns=["COUNT(T2.School)"], rows=[[1]])
+    pred = Execution(ok=True, columns=["ROUND(COUNT(T2.School), 1)"], rows=[[1.0]])
+    assert score_execution(gold, pred, require_order=False).correct
+    assert not result_differs(gold, pred)
+
+
+def test_bird_q77_identifier_quotes_in_a_label_are_also_spelling_noise():
+    """The second half of the same defect, found two questions later: the expression
+    column is labelled ``T1.`FRPM Count (Ages 5-17)` * 100 / …`` and re-serialises to
+    the double-quoted form. Whitespace normalisation alone left the labels unequal."""
+    gold = Execution(ok=True, rows=[["White Oak Elementary", 3.755868544600939]],
+                     columns=["School", "T1.`FRPM Count (Ages 5-17)` * 100 / T1.`Enrollment (Ages 5-17)`"])
+    pred = Execution(ok=True, rows=[[3.755868544600939, "White Oak Elementary"]],
+                     columns=['T1."FRPM Count (Ages 5-17)" * 100 / T1."Enrollment (Ages 5-17)"', "School"])
+    v = score_execution(gold, pred, require_order=False)
+    assert v.correct, f"quote style defeated the alignment: {v.reason}"
+    assert not result_differs(gold, pred)

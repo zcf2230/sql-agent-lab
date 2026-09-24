@@ -57,15 +57,22 @@ question ─▶ ReAct loop ─▶ tools (schema / sample / execute) ─▶ SQL
 
 ## The three numbers that matter
 
-All three figures are **generated from the recorded runs, not screenshotted**:
+All four figures are **generated from the recorded runs, not screenshotted**.
+`python -m sqlagent.figures` rewrites them:
 
 ```bash
 .venv/Scripts/python.exe -m sqlagent.figures   # rewrites docs/figures/*.svg
 ```
 
-Figures 1 and 2 rebuild from `results/`, which is committed. Figure 3 reads `runs/` —
-50 MB of full traces, deliberately gitignored — so on a fresh clone it skips with that
-reason printed, and `report.html` (committed) carries the same per-task replay instead.
+The first three figures rebuild from `results/`, which is committed. The last one reads
+`runs/` — 50 MB of full traces, deliberately gitignored — so on a fresh clone it skips
+with that reason printed, and `report.html` (committed) carries the same per-task replay
+instead.
+The replay is not complete either, and says so on the page: before `trace.py` serialised
+its appends, worker threads interleaved halves of large records, and some of those lines
+are not valid JSON. Section 9 counts the ones that cost it a task replay and names them
+(two, here); the author's local `runs/` holds more, and `python -m sqlagent.report`
+re-counts them on every run. Scores come from `results/` and are unaffected.
 
 A screenshot would freeze numbers this repository can recompute, which is the failure
 mode it keeps rediscovering (a hand-copied calibration table once drifted to 750-vs-778
@@ -90,10 +97,17 @@ and it is the only one that does not depend on which model was called.
 
 ![Grader calibration sweep](docs/figures/calibration.svg)
 
+The same judge on somebody else's questions: 120 hand-written gold queries from BIRD
+dev, and the public metric's own comparison rule next to mine. The bars split both
+ways on purpose - the public metric cannot see 11 of 13 duplicate-row fan-outs, while
+my judge is the looser one on column order and rounding.
+
+![Same judge on the public benchmark](docs/figures/bird.svg)
+
 ### 3. Any percentage opens into its evidence chain
 
 One failing task, from prompt to tool arguments to the database's actual reply to the
-verdict. This is what makes the first two figures checkable rather than assertive.
+verdict. This is what makes the figures above it checkable rather than assertive.
 
 ![Trace replay for one task](docs/figures/trace.svg)
 
@@ -121,9 +135,11 @@ The headline artefact is a single offline file - no server, no CDN, no API key, 
 inference cost. Double-click it.
 
 ```bash
-python -m sqlagent.report        # -> report.html (~3 MB): metrics, ablation table,
-                                 #    grader calibration, failure taxonomy, and a
+python -m sqlagent.report        # -> report.html: metrics, ablation table, paired
+                                 #    significance, wording-noise, grader calibration, the
+                                 #    same judge on BIRD dev, failure taxonomy, and a
                                  #    per-task trace replay that follows the run selector
+                                 #    (size not quoted here - it tracks the traces, not the prose)
 ```
 
 ```bash
@@ -543,6 +559,7 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
   sit on different tasks, so they do not cancel. `n=22` on the extrapolatable side:
   order of magnitude, not a correction factor. Reproduce for free:
   `python scripts/restability.py --pick correct-representative --analyse-only`.
+- **The judge was also measured on someone else's benchmark.** `scripts/bird_judge.py` puts it on BIRD dev - 11 real databases, hand-written gold SQL - and against the public metric's own rule (`set(pred) == set(gold)`, from `evaluation_ex.py:20`): 120/120 gold judged self-consistent, and of 460 injected defects, **11 of the 13 duplicate-row fan-outs are scored correct by the public metric** while my judge rejects them. Symmetric and less flattering: on column permutation (34) and float rounding (28) my judge is the lenient one. Doing this also exposed two real bugs in my own judge - a second definition of "same result" in the column I used to explain the metric, and silent degradation to positional comparison when a label's spelling differs. `scripts/rejudge.py` then re-graded all 2,440 in-scope stored answers locally (4 runs excluded because their task set differs) and found 0 verdict changes, so no published number moved. Not tested here: order sensitivity, dialects other than SQLite, and any BIRD *score* for the agent - this validates the judge, not the model. HANDOFF §19.
 - Single-turn only: there is no clarification question, no conversation memory, and
   ambiguous questions are answered anyway.
 

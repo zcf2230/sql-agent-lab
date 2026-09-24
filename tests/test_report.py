@@ -152,6 +152,62 @@ def test_the_report_derives_its_prose_figures_rather_than_transcribing_them():
     assert "没有计入 head 自身的不确定度" in REPORT_HTML
 
 
+def _bird_summary() -> dict:
+    return (report.read_jsonl(report.RESULTS / "bird-judge.jsonl") or [{}])[0].get("_summary") or {}
+
+
+def test_report_labels_every_defect_class_the_external_run_measured():
+    """A new corruption mode in `bird-judge.jsonl` that this page does not render would
+    silently shrink the evidence, which is the failure the whole section argues against."""
+    per = _bird_summary().get("per_mode") or {}
+    assert per, "no BIRD artifact; run `python scripts/bird_judge.py`"
+    assert set(per) <= set(report.MODE_LABELS), sorted(set(per) - set(report.MODE_LABELS))
+
+
+def test_generated_report_carries_the_external_benchmark_numbers_in_both_directions():
+    """The claim is not "my judge is stricter than the public metric" - on the same data
+    it is looser on column order and rounding. Both directions have to be on the page,
+    with the artifact's own counts, or the section is marketing."""
+    if not REPORT_HTML:
+        pytest.skip("report.html not generated; run `python -m sqlagent.report`")
+    s = _bird_summary()
+    if not s:
+        pytest.skip("results/bird-judge.jsonl missing; run `python scripts/bird_judge.py`")
+    per, n_q = s["per_mode"], s["questions_selected"]
+    for needle in ["公开基准 BIRD dev", f"{s['gold_self_correct']}/{n_q}",
+                   f"{sum(d['policy_agree'] for d in per.values())}/{s['checked']}"]:
+        assert needle in REPORT_HTML, f"report.html does not contain {needle!r}"
+    for mode, d in per.items():
+        assert f"{d['policy_agree']}/{d['checked']}" in REPORT_HTML, f"{mode} policy row missing"
+        assert f"{d['public_agree'] / d['checked']:.1%}" in REPORT_HTML, f"{mode} public row missing"
+    dd = per["drop_distinct"]
+    assert f"{dd['mine_strict']} 个判成了正确" in REPORT_HTML, "the duplicate-blindness finding is not stated"
+    assert str(per["reorder_cols"]["mine_lenient"]) in REPORT_HTML, "the lenient direction is missing"
+    for disclaimer in ["顺序敏感性未被检验", "没有、也不该有", "evaluation_ex.py:20"]:
+        assert disclaimer in REPORT_HTML, f"report.html drops {disclaimer!r}"
+    for reason, count in (s.get("skipped") or {}).items():
+        assert str(count) in REPORT_HTML, f"skip bucket {reason!r} not reported"
+
+
+def test_the_external_section_degrades_to_a_command_not_a_blank_space(monkeypatch):
+    """Every other artifact-backed block already behaves this way: absent data says how to
+    produce it rather than disappearing, because a silently absent caveat reads as an
+    absent limitation."""
+    monkeypatch.setattr(report, "read_jsonl", lambda path: [])
+    out = report.external_benchmark_html()
+    assert "bird_judge.py" in out and "无内容可渲染" in out
+
+
+def test_report_section_numbers_are_unique_and_contiguous():
+    """Sections get renumbered whenever the report grows, and the cross-references in
+    HANDOFF/README name them by number - a duplicated or skipped number makes a citation
+    point at the wrong table."""
+    import re
+
+    nums = [int(m) for m in re.findall(r"<h2>(\d+) ·", REPORT_HTML)]
+    assert nums == list(range(1, len(nums) + 1)), nums
+
+
 def test_pass_cell_keeps_a_refusal_and_a_healthy_zero_apart():
     """The distinction the gate exists for, now testable without a whole report build:
     null in the data renders as a refusal, a nonzero score with harness exceptions says

@@ -22,9 +22,9 @@
 ## 这个目录里有什么
 
 ```
-report.html          离线报告，八节：消融表、配对显著性（p 值/CI/噪声底/聚合口径敏感性）、
-                     同题重述稳定性（措辞噪声）、判分器校准、失败归因、分类通过率、
-                     对抗性安全探测、逐题 trace 回放
+report.html          离线报告，九节：消融表、配对显著性（p 值/CI/噪声底/聚合口径敏感性）、
+                     同题重述稳定性（措辞噪声）、判分器校准、判分器在别人造的题上(BIRD dev)、
+                     失败归因、分类通过率、对抗性安全探测、逐题 trace 回放
 README.md            项目主页
 docs/                上表那几份
 sqlagent/            agent 循环、护栏、判分器、runner、mock、trace、报告、统计、图
@@ -32,7 +32,8 @@ data/                题库 + 被剔除题目及原因 + 四组重述实验的�
 results/             每次运行的逐题结果 —— README 里每个百分比的出处
 runs/                trace 原文（report.html 与 docs/figures/trace.svg 的数据源）
 scripts/             calibrate.py 校准扫描、significance.py 显著性、guard_corpus.py 护栏双向测量、
-                     restability.py 同题重述实验
+                     restability.py 同题重述实验、bird_judge.py 公开基准(BIRD)上测判分器、
+                     rejudge.py 用当前判分器重判全部已存答案（回答"改了判分器，数字动没动"）
 tests/               全部测试，含"文档不得复述已撤回的主张"这一类一致性断言
 ```
 
@@ -67,7 +68,7 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 .venv/Scripts/python.exe scripts/restability.py --pick failures --analyse-only
 .venv/Scripts/python.exe scripts/restability.py --pick correct-representative --analyse-only
                                                   # 措辞噪声：读已存结果重印结论
-.venv/Scripts/python.exe -m sqlagent.figures      # 重画 README 三张图
+.venv/Scripts/python.exe -m sqlagent.figures      # 重画 README 四张图
 git status --porcelain                            # 最后一步：应当【什么都不输出】
 ```
 

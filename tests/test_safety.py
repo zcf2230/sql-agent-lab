@@ -118,14 +118,18 @@ def test_the_write_path_is_actually_tested_not_just_asked_about():
     The second had never been measured at all, and is the likelier real defect -
     an over-eager guard fails benchmark questions silently.
     """
+    import os
     import re
     import subprocess
     import sys
     from pathlib import Path
 
     script = Path(__file__).resolve().parent.parent / "scripts" / "guard_corpus.py"
+    # PYTHONUTF8 travels to the child: the corpus prints Chinese, and a parent running
+    # under -X utf8 while the child writes the console codepage decodes to mojibake.
     proc = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace",
+                          env={**os.environ, "PYTHONUTF8": "1"})
     assert proc.returncode == 0, f"guard corpus failed:\n{proc.stdout}\n{proc.stderr}"
     out = proc.stdout
     assert "穿透率 0.00%" in out, out

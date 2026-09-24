@@ -92,6 +92,64 @@ def test_transcribed_statistics_in_the_docs_equal_the_function_that_computes_the
     assert not offenders, "文档里的簇计数与 stats 不一致：" + chr(10).join(offenders)
 
 
+def test_the_bird_figures_in_the_docs_equal_the_artifact_that_measured_them():
+    """Same failure, new experiment: a draft of this material pinned `rejudge.py`'s
+    coverage as "12 runs / 1344 + 328", while the script reports 15 / 2112 / 328. Copied
+    numbers never go red on their own, so the external-benchmark figures are parsed out of
+    the documents here and compared against `results/bird-judge.jsonl`."""
+    import json
+
+    path = ROOT / "results" / "bird-judge.jsonl"
+    if not path.exists():
+        import pytest
+        pytest.skip("results/bird-judge.jsonl missing; run `python scripts/bird_judge.py`")
+    s = json.loads(path.read_text(encoding="utf-8").splitlines()[0])["_summary"]
+    per = s["per_mode"]
+
+    offenders = []
+    # the §19 per-mode table: `| `mode` 描述 | 可比观测 | ...`
+    for mode, cell in re.findall(r"\|\s*`(\w+)`[^|\n]*\|\s*\*{0,2}(\d+)\*{0,2}\s*\|", HANDOFF):
+        if mode in per and int(cell) != per[mode]["checked"]:
+            line = HANDOFF[:HANDOFF.find(f"`{mode}`")].count(chr(10)) + 1
+            offenders.append(f"HANDOFF:{line} {mode} 可比观测写 {cell}，产物 {per[mode]['checked']}")
+    for needle, what in [(f"{s['gold_self_correct']}/{s['questions_selected']}", "gold 自洽"),
+                         (str(per["drop_distinct"]["mine_strict"]), "公开口径看不见的重复行条数"),
+                         (str(s["checked"]), "注入观测总数")]:
+        if needle not in HANDOFF:
+            offenders.append(f"HANDOFF 里没有 {needle!r}（{what}）")
+    for stale in ("1344", "1,344", "1672", "1,672", "12 次运行"):
+        for name, text in _bird_carriers():
+            if stale in text:
+                offenders.append(f"{name} 仍写着 {stale!r}——那是手抄的覆盖数，"
+                                 f"以 `python scripts/rejudge.py` 自己打印的为准")
+    assert not offenders, chr(10).join(offenders)
+
+
+def _bird_carriers():
+    """Documents that state the external-benchmark numbers in prose.
+
+    `report.html` is in here only as its section-5 slice: the file also embeds every
+    per-task trace, and a four-digit token count in somebody's step 3 is not a claim
+    about re-judging coverage.
+    """
+    start, end = REPORT.find("5 · 判分器在别人"), REPORT.find("6 · 失败归因")
+    section = REPORT[start:end] if 0 <= start < end else ""
+    article = (ROOT / "docs" / "ARTICLE.md").read_text(encoding="utf-8")
+    interview = (ROOT / "docs" / "INTERVIEW.md").read_text(encoding="utf-8")
+    return [("HANDOFF", HANDOFF), ("README", README), ("RESUME", RESUME),
+            ("ARTICLE", article), ("INTERVIEW", interview), ("report.html §5", section)]
+
+
+def test_the_mistake_log_stays_numbered_in_order():
+    """§9 promises "完整" and tells a reviewer to count the rows and check the numbering is
+    continuous. That promise is only worth what a test makes it worth: appending a row
+    against the wrong anchor produced 34, 35, 37, 36 - rows that exist but read as if
+    they were missing."""
+    rows = [int(m.group(1)) for m in re.finditer(r"^([0-9]+) \|", HANDOFF, re.M)]
+    assert rows, "no mistake-log rows found; the anchor of this test moved"
+    assert rows == list(range(1, len(rows) + 1)), f"§9 行号不连续或顺序错：{rows}"
+
+
 def test_no_document_pins_the_test_count():
     """Every place that wrote "N passed" has been wrong at least once, and the count
     moves on the same day someone adds a test - which is the action this project takes
@@ -107,11 +165,13 @@ def test_no_document_pins_the_test_count():
 def test_the_guard_is_measured_on_the_axis_the_model_never_touched():
     """`scripts/guard_corpus.py` is the answer to "the write path was never tested".
     It is $0 and deterministic, so there is no excuse for it not running in CI."""
+    import os
     import subprocess
     import sys
 
     proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "guard_corpus.py")],
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          env={**os.environ, "PYTHONUTF8": "1"})
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "穿透率 0.00%" in proc.stdout and "误拒   0" in proc.stdout
 

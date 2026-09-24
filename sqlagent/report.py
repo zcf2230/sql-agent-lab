@@ -36,6 +36,17 @@ RUN_LABELS = {
     "mock-clean-v2": "mock 上界（非模型能力）",
 }
 CALIB_ORDER = ["reflow", "reorder_cols", "float_round", "drop_distinct", "wrong_limit", "bad_column"]
+# What each injected defect is, in the words used on this page. Cosmetic - the
+# *policy* behind these classes lives in `stats.PRESENTATION_ONLY_MODES`, because a
+# policy duplicated three times is three policies.
+MODE_LABELS = {
+    "reflow": "同义重写（语义不变）",
+    "reorder_cols": "列顺序颠倒（值不变）",
+    "float_round": "末列舍入到 1 位",
+    "drop_distinct": "去掉 DISTINCT（多出重复行）",
+    "wrong_limit": "强行 LIMIT 3",
+    "bad_column": "列名改成不存在的",
+}
 
 
 def token_cost(rows: list[dict], model: str) -> float:
@@ -126,15 +137,21 @@ def run_stem(summary: dict) -> str:
     return "__".join(bits)
 
 
-def load_traces() -> dict:
-    """{run stem: {task_id: last record for that task in that run}}.
+def load_traces() -> tuple[dict, dict[str, int]]:
+    """({run stem: {task_id: last record for that task in that run}}, {run stem: unparseable lines}).
 
     Keyed by run, not just by task. The first version kept one trace per task
     across every file, so filtering to `baseline` could display a 3-shot run's
     steps under a baseline verdict - the page looked authoritative and attributed
     evidence to the wrong experiment.
+
+    The second value exists because the damage is in the published files: before
+    `trace.py` serialised its appends, worker threads could interleave halves of one
+    record, and a reader that skips such a line silently turns "the evidence is gone"
+    into a page with no gap where the evidence should be.
     """
     by_run: dict[str, dict[str, dict]] = {}
+    malformed: dict[str, int] = {}
     for path in sorted(RUNS.glob("*.jsonl")):
         bucket = by_run.setdefault(path.stem, {})
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -143,10 +160,11 @@ def load_traces() -> dict:
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
+                malformed[path.stem] = malformed.get(path.stem, 0) + 1
                 continue
             rec["_file"] = path.name
             bucket[rec["task_id"]] = rec
-    return by_run
+    return by_run, malformed
 
 
 def load_tasks() -> dict:
@@ -332,6 +350,122 @@ def reliability_html() -> str:
 """
 
 
+def external_benchmark_html() -> str:
+    """The same judge, on somebody else's questions, next to the public metric's own rule.
+
+    Section 4 asks "is my judge consistent with my own policy" - on 192 questions I wrote
+    and gold SQL I wrote. That is self-consistency: a reviewer who does not trust the
+    questions cannot trust the audit either. So the judge is dropped unchanged onto BIRD
+    dev (11 real SQLite databases, hand-written gold) and compared, per injected defect
+    class, against the comparison rule the benchmark itself ships. The divergence has two
+    directions and this section reports both, because "my judge is stricter" is the same
+    one-sidedness this page exists to argue against.
+    """
+    rows = read_jsonl(RESULTS / "bird-judge.jsonl")
+    if not rows:
+        return """
+ <h2>5 · 判分器在别人造的题上（公开基准 BIRD dev）</h2>
+ <div class="note warn">仓库里没有 <code>results/bird-judge.jsonl</code>，本节无内容可渲染。
+   复现：<code>python scripts/bird_judge.py --dev-dir &lt;解压后的 BIRD dev&gt;</code>
+   （$0，不调模型；下载方式在脚本头注释里，它故意不进 CI）。</div>
+"""
+    s = rows[0].get("_summary") or {}
+    per = s.get("per_mode") or {}
+    modes = [m for m in CALIB_ORDER if m in per]
+    # Anything the artifact knows about that this page does not render is a silent gap.
+    extra = sorted(set(per) - set(modes))
+    assert not extra, f"bird-judge.jsonl has modes report.py does not render: {extra}"
+
+    head = ("<tr><th>注入缺陷</th><th class=num>可比观测</th><th class=num>与我的政策一致</th>"
+            "<th class=num>与公开口径一致</th>"
+            "<th class=num>我判错、公开口径判对<div class='sub'>公开口径看不见这个缺陷</div></th>"
+            "<th class=num>我判对、公开口径判错<div class='sub'>我的政策比它宽松</div></th></tr>")
+    body = []
+    for m in modes:
+        d = per[m]
+        n = d["checked"]
+        pa, pu = d["policy_agree"], d["public_agree"]
+        strict, lenient = d["mine_strict"], d["mine_lenient"]
+        body.append(
+            f"<tr><td><code>{html.escape(m)}</code>"
+            f"<div class='sub'>{html.escape(MODE_LABELS.get(m, ''))}</div></td>"
+            f"<td class='num'>{n}</td>"
+            f"<td class='num {'ok' if pa == n else 'bad'}'>{pa}/{n}"
+            f"{'' if n == 0 else f' = {pa/n:.0%}'}</td>"
+            f"<td class='num'>{pu}/{n}{'' if n == 0 else f' = {pu/n:.1%}'}</td>"
+            f"<td class='num {'bad' if strict else ''}'>{strict}</td>"
+            f"<td class='num'>{lenient}</td></tr>"
+        )
+    table = f"<table><thead>{head}</thead><tbody>{''.join(body)}</tbody></table>"
+
+    checked = s.get("checked", sum(per[m]["checked"] for m in modes))
+    agreed = sum(per[m]["policy_agree"] for m in modes)
+    # The two totals are reported with their split, because "13" and "62" are also the
+    # per-class observation counts elsewhere on this page - a bare total invites a reader
+    # to line them up against the wrong row.
+    def _split(key: str) -> str:
+        parts = [f"{m} {per[m][key]}" for m in modes if per[m][key]]
+        return "、".join(parts) if parts else "0"
+
+    strict_total = sum(per[m]["mine_strict"] for m in modes)
+    lenient_total = sum(per[m]["mine_lenient"] for m in modes)
+    dd = per.get("drop_distinct", {})
+    skips = s.get("skipped") or {}
+    skip_txt = "、".join(
+        f"{k.split(':')[0].replace('corrupt() failed', 'gold 解析失败')} {v} 条"
+        for k, v in sorted(skips.items()))
+    n_q = s.get("questions_selected", 0)
+
+    return f"""
+ <h2>5 · 判分器在别人造的题上（公开基准 BIRD dev）</h2>
+ <div class="sub">做法：把<b>同一个</b> <code>eval/scoring.py</code> 放到 {n_q} 道<b>人写</b> gold、
+  {s.get('databases', 0)} 个真实 SQLite 库上，注入缺陷仍由 <code>sqlagent.llm.corrupt</code> 本地生成，
+  然后逐条与<b>公开基准自己的比较规则</b>对答案。全程不调模型、$0。
+  选题规则：BIRD 自带 <code>difficulty</code> 三档各取<b>排序后前 N 个</b>
+  <code>question_id</code>（无随机、无挑选；本次共 {n_q} 题，N 见 <code>--per-tier</code> 默认值）。</div>
+ <table><thead><tr><th>检查</th><th>结果</th></tr></thead><tbody>
+  <tr><td>gold 判 gold（自我一致性）</td>
+      <td><b>{s.get('gold_self_correct', 0)}/{n_q}</b> 道人写 SQL 判为正确
+      （错误 {s.get('gold_self_wrong', 0)}）——判分器不会把自己的执行器搞出来的失败算到 SQL 头上</td></tr>
+  <tr><td>注入观测 vs 我自己的政策</td><td><b>{agreed}/{checked}</b></td></tr>
+  <tr><td>注入观测 vs 公开口径</td>
+      <td>分歧双向都有：公开口径看不见 <b>{strict_total}</b> 条（{_split('mine_strict')}，
+      我判错），我在 <b>{lenient_total}</b> 条上比它宽松（{_split('mine_lenient')}）</td></tr>
+ </tbody></table>
+ {table}
+ <div class="note warn"><b>这一节最值钱的一格是 <code>drop_distinct</code> 那一行。</b>
+   {dd.get('checked', 0)} 个能承载"去掉 DISTINCT"的观测里，公开口径把
+   <b>{dd.get('mine_strict', 0)} 个判成了正确</b>——因为它的规则是
+   <code>{html.escape(str(s.get('public_rule', '')))}</code>，<code>set()</code> 把重复行折叠掉了。
+   而重复行正是上一节校准表里标注的最高频真实错误类型。
+   <b>换句话说：一个在公开榜上拿高分的 Text-to-SQL 系统，可能根本没被要求区分
+   "结果多出一倍重复行"和"答对"。</b></div>
+ <div class="note warn"><b>但我不拿这句话冒充"我比官方严"。</b>
+   同一批数据上，我在列置换（{per.get('reorder_cols', {}).get('mine_lenient', 0)} 条）
+   与舍入（{per.get('float_round', {}).get('mine_lenient', 0)} 条）上比官方<b>宽松</b>：
+   它按位置比较列、数字必须逐位相同，我按列名对齐、按容差比数。
+   所以这里只有"两个方向各自的差 + 原因"，没有"谁的判分器更好"这个总判断。</div>
+ <div class="note"><b>搬到别人数据上之后 <code>vs 政策</code> 才是 {agreed}/{checked}：第一次跑是 93%/91%/83%。</b>
+   那三个数抓出了两个真 bug（都写进了 HANDOFF §9 与 §19.3）：
+   <code>result_differs()</code> 比较列名而判分器不比列名（于是"用来自我解释这个指标的那一列"
+   一直是错的，而主指标 100% 全绿），以及列标签的拼写噪声会<b>静默</b>退化成按位置比较。
+   自制数据投影永远命名列，这两个都测不出来。</div>
+ <div class="note"><b>分母怎么来的，逐类报，不静默丢弃：</b>{skip_txt}。
+   也就是说 <code>checked={checked}</code> 不等于 {n_q}×{len(modes)}——注入不进去的题不进入该类的分母。</div>
+ <div class="note"><b>本节没测的（别当成测了）：</b>
+   <code>require_order</code> 一律 False，公开基准没有"题面是否要求顺序"的标注，
+   <b>顺序敏感性未被检验</b>（官方口径本身对行序盲目）；只跑 SQLite 方言；
+   {n_q}/1534 题按难度分层但<b>不随机</b>；
+   <b>没有跑过 agent 做 BIRD 的题</b>，所以这里没有、也不该有"BIRD 上多少分"。
+   判分器改动会不会动已发表判定，由 <code>python scripts/rejudge.py</code> 现场回答
+   （判分是纯函数，$0；它自己打印覆盖条数与翻转数，所以那个数不抄在这里）。</div>
+ <div class="sub">出处：<code>results/bird-judge.jsonl</code>（含判分执行器
+   SQLite {html.escape(str(s.get('sqlite_version', '未记录')))}）；公开口径的语义由
+   <code>tests/test_bird_judge.py</code> 钉住，规则原文是
+   <code>bird-bench/mini_dev</code> 的 <code>evaluation_ex.py:20</code>。文字说明见 HANDOFF §19。</div>
+"""
+
+
 def pass_cell(sm: dict, colour: str = "#5b7fd6") -> tuple[float, str]:
     """(percentage for the bar, html for the cell) for one run summary.
 
@@ -413,7 +547,28 @@ def adversarial_section() -> tuple[str, str]:
     return cards, chr(10).join(tr)
 
 
-def build(runs: dict, traces: dict, tasks: dict) -> str:
+def trace_integrity_note(malformed: dict[str, int]) -> str:
+    """Say so, out loud, when the trace files have holes.
+
+    `runs/*.jsonl` is appended by the runner's worker threads; before the append took a
+    process-wide lock, a several-KB record could be handed to the OS in pieces and
+    interleave with another thread's half. The damage is in the published files, so the
+    report states how many task replays are missing instead of rendering a page with no
+    gap where the evidence used to be.
+    """
+    n = sum(malformed.values())
+    if not n:
+        return ""
+    spread = "、".join(f"{k} 少 {v} 条" for k, v in sorted(malformed.items()))
+    return (f"<div class=\"note warn\"><b>本节少了 {n} 条 trace，不是没跑过。</b> "
+            f"<code>runs/*.jsonl</code> 由 runner 的多个工作线程追加写同一个文件；在 "
+            f"<code>trace.py</code> 给追加加上进程内锁之前，一条几 KB 的记录可能被拆成两次系统调用、"
+            f"两个线程的半条互相穿插，那一行就不是合法 JSON。读侧现在数出来并写在这里，而不是静默跳过。<br>"
+            f"<b>逐题结果与分数不受影响</b>（它们在 <code>results/</code>，由 runner 单独写），"
+            f"受影响的只有那一题的过程回放。分布：{spread}。</div>")
+
+
+def build(runs: dict, traces: dict, tasks: dict, malformed: dict[str, int] | None = None) -> str:
     tags = [t for t in RUN_LABELS if t in runs]
     base = runs.get("abl2-baseline")
     headline = runs.get("abl2-3shot", base)
@@ -498,6 +653,12 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
     cats = "\n".join(cat_rows)
 
     run_stems = {tag: run_stem(runs[tag]["summary"]) for tag in tags}
+    # Counted over the runs this section can actually replay. The other trace files on
+    # disk come from calibration and mock sweeps that the page never shows, and a note
+    # that added them in would overstate what the reader is missing - the same mistake
+    # as a denominator that includes defects the injection could not reach.
+    shown = set(run_stems.values())
+    trace_note = trace_integrity_note({k: v for k, v in (malformed or {}).items() if k in shown})
     browser = build_browser(tasks, traces, run_stems)
     adv_cards, adv_rows = adversarial_section()
     # generated from the same list the table uses: a hand-written option list
@@ -583,17 +744,21 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
    <tbody>{calib}</tbody></table>
  <div class="note">“注入后无变化”是指缺陷没能改变结果集（例如给单行结果加 <code>LIMIT 3</code>）。
    这类样本按“应接受”计入一致率而不是被剔除——剔除它们会让指标自我美化。</div>
+ <div class="note warn">但这一节只证明判分器与<b>我自己</b>的政策一致，而且用的还是我自己造的题、
+   我自己写的 gold。<b>自洽不等于测对了东西</b>——下一节把同一个判分器搬到公开基准上，
+   看它与人写 gold、与公开基准自己的比较规则对不上在哪里。</div>
 
- <h2>5 · 失败归因（baseline）</h2>
+ {external_benchmark_html()}
+ <h2>6 · 失败归因（baseline）</h2>
  <table><thead><tr><th>原因</th><th class=num>题数</th><th>含义</th></tr></thead><tbody>{taxonomy}</tbody></table>
  <div class="note warn">护栏在 192 道真实题里<b>拦截 0 次</b>，注入标记只命中 1 次。也就是说安全护栏目前
    只有单元测试层面的证据，没有行为层面的证据。这一栏故意保留着，因为“拿零次观测冒充结论”
    正是这个项目反对的事。</div>
 
- <h2>6 · 分类通过率</h2>
+ <h2>7 · 分类通过率</h2>
  <table><thead><tr><th>题型族</th><th class=num>通过</th><th>通过率</th></tr></thead><tbody>{cats}</tbody></table>
 
- <h2>7 · 对抗性安全探测</h2>
+ <h2>8 · 对抗性安全探测</h2>
  <div class="sub">192 道正常题里护栏触发 <b>0 次</b>——那只说明模型没试。这一组 26 条探测专门<b>邀请</b>
    模型做越权动作，用来把"没有观测"变成"有数字"。</div>
  <div class="cards">{adv_cards}</div>
@@ -618,9 +783,10 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
    不是互斥的，有样本两者同时成立——模型说"我做不到"却仍然去试。所以"拒绝率"不能当安全指标用。
    另外 <code>direct_write</code> 6/6 全过，几乎肯定是模型被训练成拒绝显式删除指令，与本项目护栏无关。</div>
 
- <h2>8 · Trace 回放</h2>
+ <h2>9 · Trace 回放</h2>
  <div class="sub">每一题的完整过程：模型看到什么、调了哪个工具、数据库回什么、错在哪一步。
    上面所有数字都能在这里找到出处。</div>
+ {trace_note}
  <div class="filter">
    <select id="fRun">{run_options}</select>
    <select id="fVer"><option value="all">全部</option><option value="fail">只看失败</option>
@@ -740,13 +906,19 @@ def build_browser(tasks: dict, traces: dict, run_stems: dict) -> str:
 
 
 def main() -> int:
-    runs, traces, tasks = load_runs(), load_traces(), load_tasks()
+    runs = load_runs()
     if not runs:
         raise SystemExit("no results/*.jsonl found - run the eval first")
-    OUT.write_text(build(runs, traces, tasks), encoding="utf-8", newline="\n")
+    traces, malformed = load_traces()
+    tasks = load_tasks()
+    OUT.write_text(build(runs, traces, tasks, malformed), encoding="utf-8", newline="\n")
     print(f"wrote {OUT.relative_to(ROOT)}  ({OUT.stat().st_size/1024:.0f} KB)")
     print(f"  runs: {', '.join(runs)}")
     print(f"  tasks: {len(tasks)}   trace files: {len(traces)} ({sum(len(v) for v in traces.values())} task-traces)")
+    if malformed:
+        print(f"  不可解析的 trace 行: {sum(malformed.values())} "
+              f"({', '.join(f'{k} {v}' for k, v in sorted(malformed.items()))})"
+              " —— 报告第 9 节只报它真能回放的那几个 run")
     return 0
 
 

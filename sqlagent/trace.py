@@ -8,11 +8,17 @@ exact prompt, tool argument and error for a run, you cannot claim you fixed it.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_FIELD_CHARS = 4000
+
+# One process-wide lock, because the runner parallelises with threads (see
+# `TraceRecorder.write`). Two concurrent writers with no shared lock can split a large
+# record across OS writes, and the interleaved halves are not parseable JSON.
+_APPEND_LOCK = threading.Lock()
 
 
 def _shrink(value) -> str:
@@ -83,6 +89,12 @@ class TraceRecorder:
             "stats": self.stats(),
             "steps": self.steps,
         }
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        line = json.dumps(record, ensure_ascii=False) + "\n"
+        # The runner appends from several worker threads into one file. A record is a
+        # few KB, TextIOWrapper hands that to the OS in chunks, and two interleaved
+        # halves make a line that is not JSON. How often that happened in the published
+        # files is not restated here on purpose - `python -m sqlagent.report` counts the
+        # surviving damage every time it runs, and report section 9 prints it.
+        with _APPEND_LOCK, path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
         return path
