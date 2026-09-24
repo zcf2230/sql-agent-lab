@@ -51,8 +51,8 @@
         <p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>~¥14.6</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
-      <div class="card"><h3>14.0M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
+      <div class="card"><h3>~¥15.1</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>14.5M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>4 / 192（2.1pp）</h3><p>噪声底：同配置基线最大两两差异，来自 <code>sqlagent.stats</code></p></div>
       <div class="card"><h3 style="color:#e07a6b">0 / 3</h3><p>配对比较中达到 p&lt;0.05 的项数（详见第 2 节）</p></div>
     </div>
@@ -193,6 +193,7 @@
    自制数据投影永远命名列，这两个都测不出来。</div>
  
  <h3>同一个 agent、同一份配置，搬到 BIRD 上</h3>
+ <div class="note warn"><b>诊断被验证过：只改一句 prompt，重跑同样 60 题。</b> 系统提示里加一句「只返回题目要求的列」，其余全部不动：pass@1 41.7% → <b>53.3%</b>（Wilson 95% [40.9%, 65.4%]），配对<b>修好 7 题、弄坏 0 题</b>，McNemar 精确双侧 <b>p=0.0156</b>，花费 $0.0706。<br>对照 §2 那个自制基准上的 +4.2pp（p=0.0574，<b>未</b>达显著）：同一套检验，一个跨线一个没跨，两个都印在这里。它消掉的是 22 个列数错误里的 9 个，所以这是"主因之一被证实"，不是"89%↔42% 的差距被解释完"。文字版 HANDOFF §22。</div>
  <table><thead><tr><th>题集</th><th class=num>题</th><th class=num>pass@1</th><th>这套题是谁出的</th></tr></thead><tbody>
   <tr><td>自制基准（baseline，无示例）</td><td class='num'>192</td>
       <td class='num'>89.1%</td><td>我造的题、我写的 gold</td></tr>

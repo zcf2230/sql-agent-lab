@@ -383,8 +383,30 @@ def agent_on_bird_html() -> str:
     # interpretation into the reader's mouth before the evidence.
     tax_txt = "、".join(f"<code>{k}</code> {v} 题" for k, v in sorted(tax.items(), key=lambda kv: -kv[1]))
     divergences = o.get("official_blind", 0) + o.get("mine_stricter", 0)
+    hint = read_jsonl(RESULTS / "bird-agent-hint.jsonl")
+    hint_html = ""
+    if hint:
+        h = hint[0].get("_summary") or {}
+        if h.get("valid"):
+            base_v = {r["id"]: bool(r["correct"]) for r in run[1:] if r.get("id")}
+            hint_v = {r["id"]: bool(r["correct"]) for r in hint[1:] if r.get("id")}
+            b2h = sum(1 for k in hint_v if hint_v[k] and not base_v.get(k, False))
+            h2b = sum(1 for k in hint_v if not hint_v[k] and base_v.get(k, False))
+            _, _, p_value = stats.mcnemar_exact(base_v, hint_v)
+            hlo, hhi = stats.wilson(h["n_graded"] and round(h["pass_at_1"] * h["n_graded"]),
+                                    h["n_graded"] or 1)
+            hint_html = (
+                f"<div class=\"note warn\"><b>诊断被验证过：只改一句 prompt，重跑同样 "
+                f"{h['n_graded']} 题。</b> 系统提示里加一句「只返回题目要求的列」，其余全部不动："
+                f"pass@1 {agent_p1:.1%} → <b>{h['pass_at_1']:.1%}</b>"
+                f"（Wilson 95% [{hlo:.1%}, {hhi:.1%}]），配对<b>修好 {b2h} 题、弄坏 {h2b} 题</b>，"
+                f"McNemar 精确双侧 <b>p={p_value:.4f}</b>，花费 ${h['total_cost_usd']:.4f}。"
+                f"<br>对照 §2 那个自制基准上的 +4.2pp（p=0.0574，<b>未</b>达显著）："
+                f"同一套检验，一个跨线一个没跨，两个都印在这里。它消掉的是 22 个列数错误里的 9 个，"
+                f"所以这是\"主因之一被证实\"，不是\"89%↔42% 的差距被解释完\"。文字版 HANDOFF §22。</div>")
     return f"""
  <h3>同一个 agent、同一份配置，搬到 BIRD 上</h3>
+ {hint_html}
  <table><thead><tr><th>题集</th><th class=num>题</th><th class=num>pass@1</th><th>这套题是谁出的</th></tr></thead><tbody>
   <tr><td>自制基准（baseline，无示例）</td><td class='num'>{base.get('n_tasks', 0)}</td>
       <td class='num'>{base_p1:.1%}</td><td>我造的题、我写的 gold</td></tr>

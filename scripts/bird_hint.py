@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 from sqlagent import agent as agent_module  # noqa: E402
 from sqlagent import prompts, stats  # noqa: E402
-from sqlagent.config import settings_from_env  # noqa: E402
+from sqlagent.config import PROMPT_VERSION, RUNS_DIR, settings_from_env  # noqa: E402
 from sqlagent.eval.runner import load_tasks, run_one, summarise  # noqa: E402
 from sqlagent.llm import OpenAICompatProvider  # noqa: E402
 
@@ -60,15 +60,23 @@ def main() -> int:
                          "python scripts/bird_tasks.py --dev-dir <dev> --per-tier 20")
     tasks = load_tasks(tasks_path)
 
-    settings = settings_from_env(provider="openai", model=args.model,
-                                 prompt_version=f"{prompts.PROMPT_VERSION}+columns-hint")
+    settings = settings_from_env(provider="openai", model=args.model, db_root=args.db_root,
+                                 prompt_version=f"{PROMPT_VERSION}+columns-hint")
     agent_module.build_messages = _patched_build_messages
 
     def factory(task):
         return OpenAICompatProvider(settings)
 
+    # The trap this script could fall into: if the prompt override failed to move the
+    # config hash, every answer would come back from the previous arm's cache and the
+    # experiment would report the baseline at zero cost and call it a result.
+    cache = RUNS_DIR / "cache" / settings.config_hash()
+    if cache.exists() and any(cache.iterdir()):
+        raise SystemExit(f"{cache.relative_to(ROOT)} already has cached answers - the "
+                         "prompt override did not change the config hash, so this arm "
+                         "would silently re-serve the other arm's results")
     print(f"arm: prompt_version={settings.prompt_version} hash={settings.config_hash()} "
-          f"tasks={len(tasks)} (fresh calls: this key has no cache)")
+          f"tasks={len(tasks)} (cache key is new: these are fresh calls)")
     rows = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         for i, row in enumerate(pool.map(lambda t: run_one(t, settings, factory, tasks), tasks), 1):
@@ -87,6 +95,9 @@ def main() -> int:
 
     base = stats.run_summary(BASELINE_RUN)
     n = summary["n_graded"] or 1
+    if not summary.get("valid"):
+        # The runner already withheld the score; say so instead of formatting None.
+        raise SystemExit(f"[X] 这个 arm 无效：{summary.get('invalid_reason')} —— 没有分数可比")
     lo, hi = stats.wilson(round(summary["pass_at_1"] * n), n)
     print(f"\npass@1  {BASELINE_RUN}: {base['pass_at_1']:.1%}")
     print(f"pass@1  {HINT_RUN}: {summary['pass_at_1']:.1%}  Wilson 95% [{lo:.1%}, {hi:.1%}]")

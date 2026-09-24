@@ -250,3 +250,28 @@ def test_generated_report_shows_the_agent_on_bird_gap_and_its_control():
     for reason, count in a["failure_taxonomy"].items():
         assert f"<code>{reason}</code> {count} 题" in REPORT_HTML, f"{reason} row missing"
     assert "没有跑过 agent 做 BIRD 的题" not in REPORT_HTML, "the superseded claim survived the new run"
+
+
+def test_generated_report_carries_the_causal_check_with_its_paired_counts():
+    """§22 is the one place where a diagnosis becomes evidence, so the page that a
+    recruiter opens has to show the paired counts and the p value - derived from the two
+    stored arms, never retyped."""
+    if not REPORT_HTML:
+        pytest.skip("report.html not generated; run `python -m sqlagent.report`")
+    hint = report.read_jsonl(report.RESULTS / "bird-agent-hint.jsonl")
+    if not hint:
+        pytest.skip("no bird-agent-hint.jsonl; run scripts/bird_hint.py")
+    base = report.read_jsonl(report.RESULTS / "bird-agent.jsonl")
+    h = hint[0]["_summary"]
+    if not h.get("valid"):
+        pytest.skip("the hint arm was an invalid run; no score to show")
+    bv = {r["id"]: bool(r["correct"]) for r in base[1:] if r.get("id")}
+    hv = {r["id"]: bool(r["correct"]) for r in hint[1:] if r.get("id")}
+    fixed = sum(1 for k in hv if hv[k] and not bv.get(k, False))
+    broken = sum(1 for k in hv if not hv[k] and bv.get(k, False))
+    _, _, p = stats.mcnemar_exact(bv, hv)
+    for needle in [f"{h['pass_at_1']:.1%}", f"修好 {fixed} 题、弄坏 {broken} 题",
+                   f"p={p:.4f}", f"${h['total_cost_usd']:.4f}"]:
+        assert needle in REPORT_HTML, f"report.html does not carry {needle!r}"
+    # the contrast is the point: the same test said "no" on the self-built benchmark
+    assert "0.0574" in REPORT_HTML and "未" in REPORT_HTML
