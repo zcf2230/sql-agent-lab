@@ -13,6 +13,7 @@
 | 简历措辞（算法实习版 / Agent 开发版）与追问预案 | `docs/RESUME.md` |
 | 面试准备：逐模块讲解 + 追问清单（条数以文件为准，别写死） | `docs/INTERVIEW.md`（建议顺序 §8-9 → §2.5 → 其余） |
 | 可直发的技术文章 | `docs/ARTICLE.md` |
+| 想亲手问一句 | `python -m sqlagent.ask "你的问题" --provider mock`（$0）；去掉 `--provider mock` 就是真实模型，约 ¥0.01/题 |
 | 不装环境只看结果 | 双击仓库根目录 `report.html`（离线单文件，不联网、不要 key） |
 | 外部审阅意见**原件**（四轮已归档） | `docs/REVIEW_2026-09-22.md`（第一轮）、`docs/REVIEW_2026-09-23.md`（第二轮技术版）、`docs/REVIEW_NONTECH_2026-09-23.md`（第二轮非技术版）、`docs/REVIEW_2026-09-23_R3.md`（第三轮）、`docs/REVIEW_2026-09-24_R4.md`（第四轮） |
 | 空白审阅表（供你填） | `docs/REVIEW_TEMPLATE.md`（技术版，15–25 分钟）、`docs/REVIEW_TEMPLATE_NONTECH.md`（非技术版，约 10 分钟，不碰命令行） |
@@ -34,7 +35,8 @@ runs/                trace 原文（report.html 与 docs/figures/trace.svg 的�
 scripts/             calibrate.py 校准扫描、significance.py 显著性、guard_corpus.py 护栏双向测量、
                      restability.py 同题重述实验、bird_tasks.py 把 BIRD dev 出题面、
                      bird_judge.py 在 BIRD 上测判分器（--answers 可把已存答案在两套口径下重打）、
-                     rejudge.py 用当前判分器重判全部已存答案（回答"改了判分器，数字动没动"）
+                     rejudge.py 用当前判分器重判全部已存答案（回答"改了判分器，数字动没动"）、
+                     bird_hint.py 只改一句 prompt 重跑同样 60 题，检验 §20 的诊断是否因果
 tests/               全部测试，含"文档不得复述已撤回的主张"这一类一致性断言
 ```
 

@@ -16,9 +16,12 @@ audits the judge. This repo is built around that ordering.
 
 1. **先读 `docs/HANDOFF.md` §0**（30 秒）——它给出三层递减的可信度：判分器最硬、
    准确率次之、安全性样本最小。
-2. **不想动手**：打开根目录的 `report.html`（离线单文件，不需要 key、不产生花费）。
+2. **想问一句**：`python -m sqlagent.ask "how many users came from the ads channel?"`
+   —— 逐条打印它向数据库要过什么、哪句被护栏拒绝、最终 SQL 与花费；如果这句话恰好是
+   基准题，还会附上 gold 与判分结果。`--provider mock` 零花费看流程。
+3. **不想动手**：打开根目录的 `report.html`（离线单文件，不需要 key、不产生花费）。
    每个数字都能点到逐题数据。
-3. **想动手**（零 API 花费，约 5 分钟）：
+4. **想动手**（零 API 花费，约 5 分钟）：
 
    ```bash
    uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
@@ -30,9 +33,9 @@ audits the judge. This repo is built around that ordering.
    ```
 
    **预期输出写在 `docs/HANDOFF.md` §4.2**，可逐字对照。若对不上，请把它当缺陷提出。
-4. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7）。其中两处我自己认为最弱：
+5. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7）。其中两处我自己认为最弱：
    执行准确率作为唯一指标是否够；模板生成基准的难度标签是我贴的、不是实测的。
-5. **反馈请填表**：做过工程/评测的填 `docs/REVIEW_TEMPLATE.md`（勾选为主，15–25 分钟）；
+6. **反馈请填表**：做过工程/评测的填 `docs/REVIEW_TEMPLATE.md`（勾选为主，15–25 分钟）；
    不想碰命令行的填 `docs/REVIEW_TEMPLATE_NONTECH.md`（约 10 分钟，只需要"看不看得懂、
    信不信"的判断）。
 
@@ -120,6 +123,7 @@ uv venv --python 3.12 && uv pip install -e ".[dev]"
 
 python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons
+python -m sqlagent.ask "your question"   # one question, step by step (--provider mock is $0)
 python -m pytest                        # judge, guard, loop, credentials, adversarial grader, stats, artifacts
 python scripts/calibrate.py             # audit the grader with injected defects
 python -m sqlagent.adversarial --seed-tasks  # write the 123 probes without running them
