@@ -23,6 +23,7 @@ Run:  python scripts/calibrate.py
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -78,6 +79,13 @@ def _normalise(path: Path) -> None:
             # pinned at the call site too, so the display and `config_hash` agree -
             # scrubbing only the display was the mistake in the first fix.
             obj["_summary"]["model"] = f"{MOCK_MODEL} (no model called)"
+            # Same reasoning as `model`, and the reason this sweep prints its executor
+            # instead of storing it: the SQLite build is a property of the machine, so a
+            # committed artifact carrying it goes dirty the moment a reviewer runs the
+            # script on a different OS - which would look exactly like the judge
+            # changing behaviour. Real runs keep the field, because their artifacts are
+            # never re-executed anywhere and the field is their only provenance.
+            obj["_summary"].pop("sqlite_version", None)
         out.append(json.dumps(obj, ensure_ascii=False))
     path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 
@@ -107,6 +115,13 @@ def run_mode(mode: str) -> dict:
 
 
 def main() -> int:
+    # Provenance belongs on the console, not in the tracked artifact: these verdicts are
+    # produced by executing gold and corrupted SQL, so their truth is a function of the
+    # SQLite build in front of the reader. Fourth review, F4 - the guard names its
+    # parser; the judge had been naming nothing.
+    print(f"判分执行器：SQLite {sqlite3.sqlite_version}（Python {sys.version.split()[0]}）。"
+          "执行器版本不进 committed 产物，否则换台机器重跑就变脏文件，"
+          "看起来像判分器改了行为。")
     header = (
         f"{'corruption':<14} {'tested':>6} {'ok':>5} {'false-accept':>12} {'false-reject':>12} "
         f"{'rate':>6} {'no-op':>5}  what it injects"

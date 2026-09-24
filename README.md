@@ -40,8 +40,8 @@ audits the judge. This repo is built around that ordering.
 **请不要按"手写了多少代码"评分**，请按"每个数字能否为它辩护"评分——后者是这份作品
 声称自己做的事，也是它可被检验的地方。
 
-**不要引用为结论的三件事**（作者自己列的，见 §6）：自修复有增益 · 跨模型能力已比较 ·
-护栏拦截率 100%。
+**不要引用为结论的三件事**（作者自己列的，见 §6 与 §15.3 的撤回记录）：自修复有增益 ·
+跨模型能力已比较 · 护栏拦住过多少危险语句这个比率本身。
 
 ---
 
@@ -528,7 +528,9 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
   generator itself can produce: 4 of them (19%) answer correctly under some other
   wording, so roughly a fifth of recorded failures are artifacts of the benchmark's
   phrasing, not model incapability - and since those 21 are *every* non-trivial failure,
-  that is a census, not a sample: `4/192 = 2.08pp` of understatement. The mirror image
+  that is a census, not a sample - and, symmetrical with the success side, it is quoted
+  in both readings: **2.08pp** counted per task (`4/192`) and **1.30pp** averaged over the
+  four wordings, because one of those four answered correctly in exactly one of them. The mirror image
   needs a proportional sample, because sampling a family's easiest member measures
   nothing (that was the first attempt: 19 tasks, all correct in all four phrasings,
   zero discriminating power). Of 22 baseline-correct tasks drawn in proportion to family

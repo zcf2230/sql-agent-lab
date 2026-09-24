@@ -121,3 +121,51 @@ def test_generated_report_carries_the_wording_noise_instead_of_only_the_prose():
         assert p in REPORT_HTML, f"the {p} sample has no row in report.html"
     # the run that measured nothing is shown with its verdict, not quietly dropped
     assert "零区分力" in REPORT_HTML
+
+
+def test_the_report_derives_its_prose_figures_rather_than_transcribing_them():
+    """The fourth review found "7 个单题簇" in the report and in the resume sentence,
+    while §16.4 of the same repository already said 8. It measured 8: every one of the
+    eight single-task clusters is a ±100pp cluster, and the two sets coincide exactly.
+    A transcribed count in a sentence is a count that goes stale silently, so every
+    figure in those notes is now read out of stats / the run summaries and asserted
+    against them here."""
+    rt = stats.cluster_ratio_tests("abl2-baseline", "abl2-3shot")
+    assert rt["singleton_clusters"] == rt["clusters_at_100pp"] == 8, rt
+    assert f"{rt['singleton_clusters']} 个是单题簇" in REPORT_HTML
+    assert "7 个单题簇" not in REPORT_HTML, "a transcribed 7 survived the fix"
+
+    fail = stats.restability_report("failures")
+    rep = stats.restability_report("correct-representative")
+    for needle in (f"{fail['understatement_pp']:.2f}pp", f"{fail['understatement_pp_mean']:.2f}pp",
+                   f"{rep['overstatement_pp_any']:.1f}pp", f"{rep['overstatement_pp_mean']:.1f}pp"):
+        assert needle in REPORT_HTML, f"report.html does not carry {needle}"
+
+    q3 = stats.run_summary("qwen-3shot")
+    assert q3["n_no_sql_executed"] == 147
+    assert "从未执行 SQL" in REPORT_HTML, "the count is disclosed in prose but not rendered"
+    assert f"{q3['n_no_sql_executed']}" in REPORT_HTML
+    # the interval caveat: the only CI shown is the ratio's, and the head's own width
+    # has to be stated rather than silently treated as a constant.
+    hlo, hhi = rep["headline_ci"]
+    assert f"{hlo:.1%}–{hhi:.1%}" in REPORT_HTML
+    assert "没有计入 head 自身的不确定度" in REPORT_HTML
+
+
+def test_pass_cell_keeps_a_refusal_and_a_healthy_zero_apart():
+    """The distinction the gate exists for, now testable without a whole report build:
+    null in the data renders as a refusal, a nonzero score with harness exceptions says
+    so next to the number, and a real 0.0 still renders as a bar."""
+    from sqlagent.report import pass_cell
+
+    refused = pass_cell({"pass_at_1": None, "harness_exceptions": 50})
+    assert "拒绝输出" in refused[1] and "0.0%" not in refused[1]
+
+    annotated = pass_cell({"pass_at_1": 0.9844, "harness_exceptions": 3})
+    assert "含 3 次 harness 异常" in annotated[1]
+    assert "计入分母" in annotated[1], "the reader must be told those three scored 0"
+
+    clean = pass_cell({"pass_at_1": 0.8906, "harness_exceptions": 0})
+    assert "harness" not in clean[1]
+    real_zero = pass_cell({"pass_at_1": 0.0, "harness_exceptions": 0})
+    assert "拒绝输出" not in real_zero[1], "a measured 0% is not a refusal"

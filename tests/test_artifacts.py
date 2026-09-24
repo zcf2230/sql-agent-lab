@@ -17,8 +17,10 @@ import pytest
 RESULTS = Path(__file__).resolve().parent.parent / "results"
 MODES = ["reflow", "reorder_cols", "float_round", "drop_distinct", "wrong_limit", "bad_column"]
 
-# Presentation-only defects: the judge must accept these by policy.
-PRESENTATION_ONLY = {"reorder_cols"}
+# Presentation-only defects: the judge must accept these by policy. Read from stats so
+# the sweep, the report and this file cannot each carry their own copy of the policy -
+# the report's copy was missing `reflow`, which is 110 of the 168 policy rows.
+from sqlagent.stats import PRESENTATION_ONLY_MODES as PRESENTATION_ONLY
 
 
 def rows(mode: str) -> list[dict]:
@@ -70,6 +72,36 @@ def test_the_sweep_still_covers_every_defect_class():
     assert sum(per_mode.values()) >= 700, per_mode
     empty = [m for m, n in per_mode.items() if n == 0]
     assert not empty, f"defect classes with no testable observation: {empty}"
+
+
+def test_the_two_calibration_populations_add_up_to_the_published_split():
+    """The report quotes "582 adversarial + 168 policy self-demonstrating", and the 168
+    is defined as exactly the presentation-only classes. The report used to mark only
+    `reorder_cols` as policy - 58 of those 168 - so a future reflow row whose
+    re-serialisation did change the result would be published as a false accept while
+    policy says it must be accepted. This pins the set to the split it is supposed to
+    produce, and pins the split to the artifacts.
+    """
+    # "可测样本" as the report defines it: a row the injected defect could actually reach.
+    tested = {m: sum(1 for r in rows(m)[1:]
+                     if not r.get("trivial") and r.get("result_changed") is not None)
+              for m in MODES}
+    policy = sum(tested[m] for m in PRESENTATION_ONLY)
+    adversarial = sum(n for m, n in tested.items() if m not in PRESENTATION_ONLY)
+    assert policy == 168 and adversarial == 582, tested
+    assert PRESENTATION_ONLY == {"reflow", "reorder_cols"}, \
+        "adding a policy class changes the published 582/168 split; update the prose too"
+
+
+def test_the_mock_artifacts_do_not_carry_a_machine_dependent_version():
+    """`summarise()` records the SQLite build that judged a run, which is right for real
+    runs and wrong for these: HANDOFF §4.2 tells a reviewer to re-run the sweep and
+    expect a clean tree, and a stored executor version would make a Linux re-run look
+    like the judge changed behaviour.
+    """
+    for mode in MODES:
+        summary = rows(mode)[0]["_summary"]
+        assert "sqlite_version" not in summary, f"calib-{mode} stores the machine's SQLite"
 
 
 RESTABILITY_PICKS = ["families", "failures", "correct-representative", "correct-boundary"]

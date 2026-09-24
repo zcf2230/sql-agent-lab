@@ -14,7 +14,7 @@
 | 面试准备：逐模块讲解 + 追问清单（条数以文件为准，别写死） | `docs/INTERVIEW.md`（建议顺序 §8-9 → §2.5 → 其余） |
 | 可直发的技术文章 | `docs/ARTICLE.md` |
 | 不装环境只看结果 | 双击仓库根目录 `report.html`（离线单文件，不联网、不要 key） |
-| 外部审阅意见**原件**（四轮已归档） | `docs/REVIEW_2026-09-22.md`（第一轮）、`docs/REVIEW_2026-09-23.md`（第二轮技术版）、`docs/REVIEW_NONTECH_2026-09-23.md`（第二轮非技术版）、`docs/REVIEW_2026-09-23_R3.md`（第三轮） |
+| 外部审阅意见**原件**（四轮已归档） | `docs/REVIEW_2026-09-22.md`（第一轮）、`docs/REVIEW_2026-09-23.md`（第二轮技术版）、`docs/REVIEW_NONTECH_2026-09-23.md`（第二轮非技术版）、`docs/REVIEW_2026-09-23_R3.md`（第三轮）、`docs/REVIEW_2026-09-24_R4.md`（第四轮） |
 | 空白审阅表（供你填） | `docs/REVIEW_TEMPLATE.md`（技术版，15–25 分钟）、`docs/REVIEW_TEMPLATE_NONTECH.md`（非技术版，约 10 分钟，不碰命令行） |
 
 ---

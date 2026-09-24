@@ -8,6 +8,8 @@ real result until this gate existed.
 
 from __future__ import annotations
 
+import sqlite3
+
 from sqlagent.config import Settings
 from sqlagent.eval.runner import summarise
 
@@ -52,6 +54,36 @@ def test_the_healthy_path_is_valid():
     out = summarise(rows, Settings())
     assert out["valid"] is True and out["harness_exceptions"] == 0
     assert abs(out["pass_at_1"] - 0.75) < 1e-6
+
+
+def test_a_refused_run_is_null_in_the_data_not_zero_on_disk():
+    """Withholding used to be true only of the CLI and the report: the JSON still said
+    `pass_at_1: 0.0`, which is exactly the reading the gate exists to block - a later
+    reader or script sees a model that got nothing right. Fourth review, F3."""
+    rows = [row(f"t{i}", error=True) for i in range(50)]
+    out = summarise(rows, Settings())
+    assert out["pass_at_1"] is None, "a refusal must be null, not the number 0"
+    assert out["valid"] is False
+
+
+def test_a_few_crashes_still_score_and_the_count_travels_with_the_record():
+    rows = [row(f"t{i}", correct=(i >= 3), error=(i < 3)) for i in range(192)]
+    out = summarise(rows, Settings())
+    assert out["valid"] is True and out["harness_exceptions"] == 3
+    # Under the gate but not under the 4/192 noise floor: the reader has to be shown
+    # the count, because three fake zeros moved the headline by 1.6pp.
+    assert out["failure_taxonomy"]["harness_exception"] == 3
+    assert abs(out["pass_at_1"] - 189 / 192) < 1e-4
+
+
+def test_the_run_records_which_sqlite_judged_it():
+    """Every verdict comes from executing SQL, so it belongs to a SQLite build the way
+    the allowlist belongs to a parser version - and unlike the parser, this one was in
+    no artifact at all. Recorded per run; `scripts/calibrate.py` strips it from the
+    tracked mock artifacts on purpose, so a reviewer on another OS does not produce a
+    diff that looks like the judge changing behaviour."""
+    out = summarise([row("a", correct=True)], Settings())
+    assert out["sqlite_version"] == sqlite3.sqlite_version
 
 
 def test_dataset_digest_ignores_line_endings(tmp_path):

@@ -32,11 +32,27 @@ COMPARISONS = [
     ("qwen-flash: 3-shot vs baseline", "qwen-baseline", "qwen-3shot"),
 ]
 
+# Defect classes the judge is *supposed* to accept, because they change only how the
+# same result set is spelled. The split is policy, not measurement: `reflow` contributes
+# the 110 policy-self-demonstrating observations and `reorder_cols` the 58, and until
+# the fourth review the report counted only the latter - zero numeric effect today,
+# because reflow's re-serialisation has never yet changed a result set, but the moment
+# it does, the report would start calling those rows false accepts. One set, two
+# consumers (report.py's table and the artifact test), so they cannot disagree.
+PRESENTATION_ONLY_MODES = {"reflow", "reorder_cols"}
+
 # Nominally identical runs. Their spread is the noise floor; nothing smaller than it
-# is a result. Four entries because the config digest changed twice mid-project for
-# documented reasons, and each earlier baseline is still a same-config re-measurement
-# of the same 192 tasks.
-BASELINES = ["baseline-v2", "baseline-v3", "abl-baseline", "abl2-baseline"]
+# is a result.
+#
+# `abl-baseline` used to be in here, and the two comments in this file disagreed about
+# what it was: COMPARISONs called it "predates the few-shot wiring" (a different code
+# version), BASELINES called every entry "a same-config re-measurement". Both cannot be
+# true of the same file, and the resume repeated the flattering reading as "四份同配置基线".
+# Measured: the worst pair is baseline-v2 vs baseline-v3 at 4/192 = 2.1pp and does not
+# involve abl-baseline, so dropping it costs nothing and removes the contradiction.
+# Its 2- and 1-task disagreements against the v2/v3 pair are re-runs of a *different
+# harness*, which is a different quantity from measurement noise.
+BASELINES = ["baseline-v2", "baseline-v3", "abl2-baseline"]
 
 
 def load_verdicts(tag: str) -> dict[str, bool]:
@@ -263,11 +279,13 @@ def cluster_ratio_tests(base_tag: str, variant_tag: str) -> dict:
     """
     base, variant = load_verdicts(base_tag), load_verdicts(variant_tag)
     diffs = []
+    sizes = []
     for _k, ts in clusters().items():
         rb = sum(bool(base.get(t)) for t in ts) / len(ts)
         rv = sum(bool(variant.get(t)) for t in ts) / len(ts)
         if rv != rb:
             diffs.append((rv - rb) * 100)
+            sizes.append(len(ts))
     pos = sum(1 for x in diffs if x > 0)
     neg = sum(1 for x in diffs if x < 0)
     n = pos + neg
@@ -289,6 +307,15 @@ def cluster_ratio_tests(base_tag: str, variant_tag: str) -> dict:
             "wilcoxon_w": w_pos, "wilcoxon_z": z,
             "wilcoxon_p": math.erfc(abs(z) / math.sqrt(2)),
             "differences_pp": sorted(round(x, 1) for x in diffs),
+            # These two counts used to live in prose - one of them as "7 个单题簇",
+            # which was wrong (it is 8) and which a fourth reviewer found in the
+            # report and in the resume sentence while §16.4 already carried the
+            # right number. A transcribed count in a sentence is a count that drifts.
+            "singleton_clusters": sum(1 for s in sizes if s == 1),
+            "clusters_at_100pp": sum(1 for x in diffs if abs(x) == 100.0),
+            "positive_100pp": sum(1 for x in diffs if x == 100.0),
+            "negative_100pp": sum(1 for x in diffs if x == -100.0),
+            "max_cluster_tasks": max(sizes) if sizes else 0,
             "method_note": "Wilcoxon 用正态近似 + 结校正，未加连续性校正；加与不加会在 0.023/0.031 之间移动"}
 
 
@@ -398,6 +425,10 @@ def restability_report(pick: str) -> dict:
     k, n = len(out["fragile"]), out["n_tasks"]
     out["extrapolatable"] = pick == REPREPRESENTATIVE_PICK
     out["headline_pass1"] = head
+    # The headline is itself an estimate off `total` tasks, so the interval below is
+    # only half the uncertainty; publish the head's own width instead of describing it.
+    if head and total:
+        out["headline_ci"] = wilson(round(head * total), total)
     if out["extrapolatable"] and k and head:
         lo, hi = wilson(k, n)
         out.update(
@@ -414,4 +445,12 @@ def restability_report(pick: str) -> dict:
         out["understatement_pp"] = 100 * len(out["lucky"]) / total
         out["understatement_numerator"] = len(out["lucky"])
         out["benchmark_tasks"] = total
+        # The same task-count reading is not the only one available. Averaged over the
+        # four wordings, a task that answers correctly in exactly one of them is worth
+        # 0.25, not 1 - which is the reading the success side is also quoted in. The
+        # fourth review caught the asymmetry: the flattering direction was quoted with
+        # the larger number and the unflattering one with both.
+        credited = sum(sum(out["per_task"][t]) for t in out["lucky"]) / out["n_forms"]
+        out["understatement_pp_mean"] = 100 * credited / total
+        out["understatement_credit_tasks"] = round(credited, 2)
     return out

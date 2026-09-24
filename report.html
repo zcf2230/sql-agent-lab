@@ -47,7 +47,8 @@
    <code>python -m sqlagent.report</code> 生成，不产生任何 API 调用</div>
 
  <div class="cards">
-      <div class="card"><h3>93.2%</h3><p>pass@1（最佳配置）</p></div>
+      <div class="card"><h3>93.2%</h3>
+        <p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
       <div class="card"><h3>~¥14.1</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
@@ -59,20 +60,25 @@
  <h2>1 · 消融结果</h2>
  <table><thead><tr><th>配置</th><th class=num>题数</th><th>pass@1</th><th class=num>Δ baseline</th>
    <th class=num>LLM 步数</th><th class=num>SQL 尝试</th><th class=num>真正用过工具</th>
-   <th class=num>花费</th></tr></thead>
-   <tbody><tr><td>baseline（无示例）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>—</td><td class='num'>4.71</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.167</td></tr>
-<tr><td>+ 3-shot 示例</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:93.2%;background:#4f9d8f"></span><em>93.2%</em></div></td><td class='num'>+4.2pp</td><td class='num'>4.22</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.167</td></tr>
-<tr><td>− 自修复循环</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>+0.0pp</td><td class='num'>4.7</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.166</td></tr>
-<tr><td>qwen-flash baseline</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:70.3%;background:#c98a4b"></span><em>70.3%</em></div></td><td class='num'>-18.8pp</td><td class='num'>5.21</td><td class='num'>0.91</td><td class='num'><span style='color:#e07a6b'>89%</span></td><td class='num'>~$0.078</td></tr>
-<tr><td>qwen-flash + 3-shot</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:75.0%;background:#4f9d8f"></span><em>75.0%</em></div></td><td class='num'>-14.1pp</td><td class='num'>3.63</td><td class='num'>0.25</td><td class='num'><span style='color:#e07a6b'>24%</span> (45 题 0 工具)</td><td class='num'>~$0.061</td></tr>
-<tr><td>mock 上界（非模型能力）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:100.0%;background:#8b8fa3"></span><em>100.0%</em></div></td><td class='num'>—</td><td class='num'>3.0</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>~$0.046</td></tr></tbody></table>
+   <th class=num>从未执行 SQL</th><th class=num>花费</th></tr></thead>
+   <tbody><tr><td>baseline（无示例）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>—</td><td class='num'>4.71</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>0</td><td class='num'>~$0.167</td></tr>
+<tr><td>+ 3-shot 示例</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:93.2%;background:#4f9d8f"></span><em>93.2%</em></div></td><td class='num'>+4.2pp</td><td class='num'>4.22</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>0</td><td class='num'>~$0.167</td></tr>
+<tr><td>− 自修复循环</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:89.1%;background:#5b7fd6"></span><em>89.1%</em></div></td><td class='num'>+0.0pp</td><td class='num'>4.7</td><td class='num'>1.01</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>0</td><td class='num'>~$0.166</td></tr>
+<tr><td>qwen-flash baseline</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:70.3%;background:#c98a4b"></span><em>70.3%</em></div></td><td class='num'>-18.8pp</td><td class='num'>5.21</td><td class='num'>0.91</td><td class='num'><span style='color:#e07a6b'>89%</span></td><td class='num'>21</td><td class='num'>~$0.078</td></tr>
+<tr><td>qwen-flash + 3-shot</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:75.0%;background:#4f9d8f"></span><em>75.0%</em></div></td><td class='num'>-14.1pp</td><td class='num'>3.63</td><td class='num'>0.25</td><td class='num'><span style='color:#e07a6b'>24%</span> (45 题 0 工具)</td><td class='num'>147</td><td class='num'>~$0.061</td></tr>
+<tr><td>mock 上界（非模型能力）</td><td class='num'>192</td><td style='min-width:180px'><div class="bar"><span style="width:100.0%;background:#8b8fa3"></span><em>100.0%</em></div></td><td class='num'>—</td><td class='num'>3.0</td><td class='num'>1.0</td><td class='num'><span style='color:#4f9d8f'>100%</span></td><td class='num'>0</td><td class='num'>~$0.046</td></tr></tbody></table>
  <div class="note warn"><b>跨模型对比目前是混淆的，别当成能力排名。</b>Qwen 的 3-shot 准确率高于它自己的
-   baseline（75.0% vs 70.3%），但同一次运行里<b>只有 24% 的题目真正执行过 SQL，45 题一次工具都没调</b>
-   （baseline 是 89% / 0 题）。原因在示例格式：few-shot 是"问题 → SQL"两段式，不含工具调用，于是模型
-   模仿示例直接作答——它不再是个 agent，只是被问对了更多题。<b>prompt 格式改变了执行协议，而 pass@1
-   把这个报成了准确率提升。</b>这就是"真正用过工具"这一列存在的理由。</div>
- <div class="note"><b>关掉自修复后逐题结果完全不变（0 升 0 降）</b>——因为模型首次生成的 SQL
-   约 99% 直接可执行，根本没有错误可修。机制本身靠注入单独验证：开=96.2% 恢复，关=0%。
+   baseline（75.0% vs 70.3%），但同一次运行里
+   <b>只有 24% 的题目真正执行过 SQL，45 题一次工具都没调</b>
+   （baseline 是 89% / 0 题）。
+   另有 <b>147/192 题最终 SQL 来自模型散文、从未在库上执行过</b>，
+   <b>它们照常计分</b>——这一列就是为了让这件事在表里而不只在散文里。原因在示例格式：few-shot 是
+   "问题 → SQL"两段式，不含工具调用，于是模型模仿示例直接作答——它不再是个 agent，只是被问对了更多题。
+   <b>prompt 格式改变了执行协议，而 pass@1 把这个报成了准确率提升。</b></div>
+ <div class="note"><b>关掉自修复后逐题结果完全不变（0 升 0 降）</b>
+   ——baseline 平均每题 1.01 次 SQL 尝试，也就是几乎没有错误可修。
+   机制本身靠注入单独验证：开=0.0% 恢复
+   （0 次注入错误），关=0%。
    所以诚实的结论是“该组件在本数据集上测不出增益”，不是“自修复提升了准确率”。</div>
 
  
@@ -80,7 +86,7 @@
  <table><thead><tr><th>配对比较</th><th class=num>n</th><th class=num>baseline</th><th class=num>variant</th><th class=num>Δ</th><th class=num>Wilson 95% CI</th><th class=num>修好/弄坏</th><th class=num>McNemar 精确 p</th><th>结论</th></tr></thead><tbody><tr><td>deepseek: 3-shot vs baseline</td><td class='num'>192</td><td class='num'>89.1%</td><td class='num'>93.2%</td><td class='num'>+4.2pp</td><td class='num'>88.8%–96.0%</td><td class='num'>11/3</td><td class='num' style='color:#e07a6b'>0.0574</td><td style='color:#e07a6b'>未达显著</td></tr><tr><td>deepseek: self-repair OFF vs baseline</td><td class='num'>192</td><td class='num'>89.1%</td><td class='num'>89.1%</td><td class='num'>+0.0pp</td><td class='num'>83.9%–92.7%</td><td class='num'>0/0</td><td class='num' style='color:#e07a6b'>1.0000</td><td style='color:#e07a6b'>未达显著</td></tr><tr><td>qwen-flash: 3-shot vs baseline</td><td class='num'>192</td><td class='num'>70.3%</td><td class='num'>75.0%</td><td class='num'>+4.7pp</td><td class='num'>68.4%–80.6%</td><td class='num'>23/14</td><td class='num' style='color:#e07a6b'>0.1877</td><td style='color:#e07a6b'>未达显著</td></tr></tbody></table>
  <div class="note warn"><b>头条那一行：+4.2pp，p=0.0574，未达显著。</b>
    噪声底是 4/192 = 2.1pp
-   （baseline-v2 vs baseline-v3，四份同配置基线的最大两两差异），
+   （baseline-v2 vs baseline-v3，三份同配置基线的最大两两差异），
    低于这个幅度的差异不报告为改进。三个比较全部未达 p&lt;0.05。</div>
  <h3 style="margin-top:14px">同一份数据的三种聚合口径</h3>
  <table><thead><tr><th>聚合口径</th><th class=num>独立单位</th><th class=num>Δ</th><th class=num>修好/弄坏</th><th class=num>p</th><th>结论</th></tr></thead><tbody><tr><td>题级（McNemar 的默认口径）</td><td class='num'>192</td><td class='num'>+4.2pp</td><td class='num'>11/3</td><td class='num' style='color:#e07a6b'>0.0574</td><td>未达显著</td></tr><tr><td>簇级·全对才算对（100 簇）</td><td class='num'>100</td><td class='num'>+5.0pp</td><td class='num'>8/3</td><td class='num' style='color:#e07a6b'>0.2266</td><td>未达显著</td></tr><tr><td>簇级·有一个对就算对（100 簇）</td><td class='num'>100</td><td class='num'>+7.0pp</td><td class='num'>8/1</td><td class='num' style='color:#4f9d8f'>0.0391</td><td>显著</td></tr></tbody></table>
@@ -90,7 +96,7 @@
    要么不会。所以 <b>n=192 高估了证据量，而且高估的方向是偏袒提升</b>。
    这里不选一个"正确"口径来报，而是把三种都摆出来：<b>凡是只在某一种聚合下才成立的结论，
    就不该被写成结论。</b></div>
- <div class="note"><b>唯一一个不依赖阈值的正向陈述：</b>簇级比率的配对 bootstrap 95% 区间 = <b>+6.29pp [+1.00, +12.00]</b>（100 簇 × 10000 次重采样，种子固定可复现），区间不含 0。注意它与符号检验（p=0.146）方向相反——因为差异分布极偏：12 个非零簇里 7 个是单题簇、一次跳满 100pp，均值被它们主导。<b>均值说"过线了"，中位数与符号说"还没有"</b>，所以这里两个都摆出来，而不是挑一个写进结论。</div>
+ <div class="note"><b>唯一一个不依赖阈值的正向陈述：</b>簇级比率的配对 bootstrap 95% 区间 = <b>+6.29pp [+1.00, +12.00]</b>（100 簇 × 10000 次重采样，种子固定可复现），区间不含 0。注意它与符号检验（p=0.146）方向相反——因为差异分布极偏：12 个非零簇里 <b>8 个是单题簇</b>（其中 7 个 +100pp、1 个 −100pp），均值被它们主导。<b>均值说"过线了"，中位数与符号说"还没有"</b>，所以这里两个都摆出来，而不是挑一个写进结论。</div>
  <div class="note">本节的每一个数字都来自 <code>sqlagent/stats.py</code>——与
    <code>scripts/significance.py</code> 和 <code>docs/figures/ablation.svg</code> 同一份实现。
    配对关系与文件名写死在那里，不由本报告另算。有一段时间 <code>report.py</code> 自己写了
@@ -105,16 +111,25 @@
  <table><thead><tr><th>抽样规则</th><th class=num>题</th><th class=num>运行</th><th class=num>四种问法一致</th><th class=num>换问法即翻脸</th><th class=num>基准问法通过率</th><th class=num>问法平均</th><th class=num>花费</th><th>能不能外推到全卷</th></tr></thead><tbody><tr><td>families<div class='sub'>每族第一题</div></td><td class='num'>19</td><td class='num'>76</td><td class='num'>19/19</td><td class='num'><b>0/19 = 0%</b></td><td class='num'>100.0%</td><td class='num'>100.0%</td><td class='num'>$0.0655</td><td style='color:#e07a6b'>否——19 题四种问法全对，零区分力（刻意挑了每个族最简单的题）</td></tr><tr><td>failures<div class='sub'>baseline 判错的全部题</div></td><td class='num'>21</td><td class='num'>84</td><td class='num'>17/21</td><td class='num'><b>4/21 = 19%</b></td><td class='num'>0.0%</td><td class='num'>11.9%</td><td class='num'>$0.0793</td><td style='color:#4f9d8f'>是——但它是普查而不是抽样，所以换算不乘系数</td></tr><tr><td>correct-representative<div class='sub'>baseline 判对、按族占比抽样</div></td><td class='num'>22</td><td class='num'>88</td><td class='num'>21/22</td><td class='num'><b>1/22 = 5%</b></td><td class='num'>100.0%</td><td class='num'>98.9%</td><td class='num'>$0.0770</td><td style='color:#4f9d8f'>是——唯一一组按占比抽的</td></tr><tr><td>correct-boundary<div class='sub'>baseline 判对、专挑同骨架内有对有错的题 + 边界族</div></td><td class='num'>20</td><td class='num'>80</td><td class='num'>18/20</td><td class='num'><b>2/20 = 10%</b></td><td class='num'>100.0%</td><td class='num'>97.5%</td><td class='num'>$0.0794</td><td style='color:#e07a6b'>否——刻意过采样不稳定</td></tr></tbody></table>
  <div class="note warn"><b>误差的两个方向都被量到了，而且不在同一批题上，所以不抵消。</b>
    低估侧是普查：baseline 判错的全部 21 道非 trivial 失败题里，
-   <b>4 道（19%）换一种问法就做对了</b>，
-   直接等于 <b>2.08pp</b> 的 pass@1 低估（4/192，不乘任何系数）。
+   <b>4 道（19%）换一种问法就做对了</b>
+   （4/192，不乘任何系数）。
    高估侧只能按族占比抽样才有效：判对的题里 <b>1/22 = 4.5%
    （Wilson 95% [0.8%, 21.8%]）换一种问法就判错</b>。</div>
- <div class="note"><b>"措辞造成多少高估"有两种读法，相差 3.0pp，必须点名用的是哪一种：</b>
-   读法 A「换一种说法即判丢」= 89.1% × 4.5% =
-   <b>4.0pp</b>（区间 0.7–19.4pp）；
-   读法 B「四种问法各跑一遍取平均」= 89.1% ×
-   1.1pp =
-   <b>1.0pp</b>。差在"一道题四种问法里错几种"。</div>
+ <div class="note"><b>两侧都用同样的两种读法，不许对模型有利的方向只报大口径：</b><br>
+   低估侧 读法 A「换一种说法即得分」= 4/192 =
+   <b>2.08pp</b>；读法 B「四种问法取平均」=
+   2.5 道/192 =
+   <b>1.30pp</b>——那 4 道里有 1 道
+   四种问法只对了 1 种，按平均只值 0.25 道。<br>
+   高估侧 读法 A = 89.1% × 4.5% =
+   <b>4.0pp</b>；读法 B = 89.1% ×
+   1.1pp = <b>1.0pp</b>。
+   差在"一道题四种问法里错几种"。</div>
+ <div class="note"><b>关于区间的两句实话：</b>上面唯一的区间
+   （0.7–19.4pp）是<em>比例</em>的 Wilson 区间乘上 baseline 的<em>点估计</em>
+   89.1%，<b>没有计入 head 自身的不确定度</b>（它自己的 Wilson 95% 是
+   83.9%–92.7%，半宽约 4.4pp），所以真实区间只会更宽——方向上偏乐观，说清比藏好。
+   两个"取平均"口径（读法 B）是均值而非比例，<b>没有现成的闭式 CI</b>，因此不配图区间。</div>
  <div class="note warn"><b>第一条那一组（<code>families</code>）是本实验自己的设计错误，产物保留在仓库里。</b>
    "每个模板族取第一题"看着像分层抽样，实际是刻意挑每个族最简单的那道，于是 19 题
    四种问法全对、一致率 100%、翻脸 0 道——<b>那不是稳定，那是零区分力</b>：没有可动摇的东西，

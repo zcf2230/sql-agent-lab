@@ -184,6 +184,7 @@ def significance_html() -> str:
     """
     nf = stats.noise_floor()
     bs = stats.cluster_bootstrap("abl2-baseline", "abl2-3shot")
+    rt = stats.cluster_ratio_tests("abl2-baseline", "abl2-3shot")
     boot_pp = f"{bs['point_pp']:+.2f}pp [{bs['ci_low_pp']:+.2f}, {bs['ci_high_pp']:+.2f}]"
     head = ("<tr><th>配对比较</th><th class=num>n</th><th class=num>baseline</th>"
             "<th class=num>variant</th><th class=num>Δ</th><th class=num>Wilson 95% CI</th>"
@@ -230,7 +231,7 @@ def significance_html() -> str:
  {table}
  <div class="note warn"><b>头条那一行：+4.2pp，p=0.0574，未达显著。</b>
    噪声底是 {nf['worst_tasks']}/{nf['n']} = {nf['worst_pp']:.1f}pp
-   （{html.escape(nf['worst_pair'][0])} vs {html.escape(nf['worst_pair'][1])}，四份同配置基线的最大两两差异），
+   （{html.escape(nf['worst_pair'][0])} vs {html.escape(nf['worst_pair'][1])}，三份同配置基线的最大两两差异），
    低于这个幅度的差异不报告为改进。三个比较全部未达 p&lt;0.05。</div>
  <h3 style="margin-top:14px">同一份数据的三种聚合口径</h3>
  {stable_table}
@@ -240,7 +241,7 @@ def significance_html() -> str:
    要么不会。所以 <b>n=192 高估了证据量，而且高估的方向是偏袒提升</b>。
    这里不选一个"正确"口径来报，而是把三种都摆出来：<b>凡是只在某一种聚合下才成立的结论，
    就不该被写成结论。</b></div>
- <div class="note"><b>唯一一个不依赖阈值的正向陈述：</b>簇级比率的配对 bootstrap 95% 区间 = <b>{boot_pp}</b>（{bs['clusters']} 簇 × {bs['iterations']} 次重采样，种子固定可复现），区间不含 0。注意它与符号检验（p=0.146）方向相反——因为差异分布极偏：12 个非零簇里 7 个是单题簇、一次跳满 100pp，均值被它们主导。<b>均值说"过线了"，中位数与符号说"还没有"</b>，所以这里两个都摆出来，而不是挑一个写进结论。</div>
+ <div class="note"><b>唯一一个不依赖阈值的正向陈述：</b>簇级比率的配对 bootstrap 95% 区间 = <b>{boot_pp}</b>（{bs['clusters']} 簇 × {bs['iterations']} 次重采样，种子固定可复现），区间不含 0。注意它与符号检验（p={rt['sign_p']:.3f}）方向相反——因为差异分布极偏：{rt['nonzero_clusters']} 个非零簇里 <b>{rt['singleton_clusters']} 个是单题簇</b>（其中 {rt['positive_100pp']} 个 +100pp、{rt['negative_100pp']} 个 −100pp），均值被它们主导。<b>均值说"过线了"，中位数与符号说"还没有"</b>，所以这里两个都摆出来，而不是挑一个写进结论。</div>
  <div class="note">本节的每一个数字都来自 <code>sqlagent/stats.py</code>——与
    <code>scripts/significance.py</code> 和 <code>docs/figures/ablation.svg</code> 同一份实现。
    配对关系与文件名写死在那里，不由本报告另算。有一段时间 <code>report.py</code> 自己写了
@@ -286,8 +287,10 @@ def reliability_html() -> str:
 
     lo, hi = rep["fragile_ci"]
     alo, ahi = rep["overstatement_pp_any_ci"]
+    hlo, hhi = rep.get("headline_ci", (0.0, 0.0))
+    head_half = (hhi - hlo) / 2 * 100
     k, n = len(rep["fragile"]), rep["n_tasks"]
-    gap = abs(rep["overstatement_pp_any"] - rep["overstatement_pp_mean"])
+
     return f"""
  <h2>3 · 同题重述稳定性（一次问法只是一个样本）</h2>
  <div class="sub">做法：从存档题面反推裸题面（套回生成器模板必须<b>逐字节</b>还原，否则该题跳过并报告），
@@ -296,16 +299,25 @@ def reliability_html() -> str:
  {table}
  <div class="note warn"><b>误差的两个方向都被量到了，而且不在同一批题上，所以不抵消。</b>
    低估侧是普查：baseline 判错的全部 {fail['n_tasks']} 道非 trivial 失败题里，
-   <b>{len(fail['lucky'])} 道（{len(fail['lucky'])/fail['n_tasks']:.0%}）换一种问法就做对了</b>，
-   直接等于 <b>{fail['understatement_pp']:.2f}pp</b> 的 pass@1 低估（{fail['understatement_numerator']}/{fail['benchmark_tasks']}，不乘任何系数）。
+   <b>{len(fail['lucky'])} 道（{len(fail['lucky'])/fail['n_tasks']:.0%}）换一种问法就做对了</b>
+   （{fail['understatement_numerator']}/{fail['benchmark_tasks']}，不乘任何系数）。
    高估侧只能按族占比抽样才有效：判对的题里 <b>{k}/{n} = {rep['fragile_share']:.1%}
    （Wilson 95% [{lo:.1%}, {hi:.1%}]）换一种问法就判错</b>。</div>
- <div class="note"><b>"措辞造成多少高估"有两种读法，相差 {gap:.1f}pp，必须点名用的是哪一种：</b>
-   读法 A「换一种说法即判丢」= {rep['headline_pass1']:.1%} × {rep['fragile_share']:.1%} =
-   <b>{rep['overstatement_pp_any']:.1f}pp</b>（区间 {alo:.1f}–{ahi:.1f}pp）；
-   读法 B「四种问法各跑一遍取平均」= {rep['headline_pass1']:.1%} ×
-   {(rep['published_rate']-rep['mean_rate'])*100:.1f}pp =
-   <b>{rep['overstatement_pp_mean']:.1f}pp</b>。差在"一道题四种问法里错几种"。</div>
+ <div class="note"><b>两侧都用同样的两种读法，不许对模型有利的方向只报大口径：</b><br>
+   低估侧 读法 A「换一种说法即得分」= {fail['understatement_numerator']}/{fail['benchmark_tasks']} =
+   <b>{fail['understatement_pp']:.2f}pp</b>；读法 B「四种问法取平均」=
+   {fail['understatement_credit_tasks']} 道/{fail['benchmark_tasks']} =
+   <b>{fail['understatement_pp_mean']:.2f}pp</b>——那 {len(fail['lucky'])} 道里有 1 道
+   四种问法只对了 1 种，按平均只值 0.25 道。<br>
+   高估侧 读法 A = {rep['headline_pass1']:.1%} × {rep['fragile_share']:.1%} =
+   <b>{rep['overstatement_pp_any']:.1f}pp</b>；读法 B = {rep['headline_pass1']:.1%} ×
+   {(rep['published_rate']-rep['mean_rate'])*100:.1f}pp = <b>{rep['overstatement_pp_mean']:.1f}pp</b>。
+   差在"一道题四种问法里错几种"。</div>
+ <div class="note"><b>关于区间的两句实话：</b>上面唯一的区间
+   （{alo:.1f}–{ahi:.1f}pp）是<em>比例</em>的 Wilson 区间乘上 baseline 的<em>点估计</em>
+   {rep['headline_pass1']:.1%}，<b>没有计入 head 自身的不确定度</b>（它自己的 Wilson 95% 是
+   {hlo:.1%}–{hhi:.1%}，半宽约 {head_half:.1f}pp），所以真实区间只会更宽——方向上偏乐观，说清比藏好。
+   两个"取平均"口径（读法 B）是均值而非比例，<b>没有现成的闭式 CI</b>，因此不配图区间。</div>
  <div class="note warn"><b>第一条那一组（<code>families</code>）是本实验自己的设计错误，产物保留在仓库里。</b>
    "每个模板族取第一题"看着像分层抽样，实际是刻意挑每个族最简单的那道，于是 {facts['families']['n_tasks']} 题
    四种问法全对、一致率 100%、翻脸 0 道——<b>那不是稳定，那是零区分力</b>：没有可动摇的东西，
@@ -320,6 +332,26 @@ def reliability_html() -> str:
 """
 
 
+def pass_cell(sm: dict, colour: str = "#5b7fd6") -> tuple[float, str]:
+    """(percentage for the bar, html for the cell) for one run summary.
+
+    Two failure modes this has to keep apart, because the fourth review found the
+    second one still reachable: a run whose harness died must not read as a model that
+    answered nothing correctly - the JSON used to carry `pass_at_1: 0.0` for those - and
+    a run with a handful of harness exceptions must not read as clean, since those
+    tasks scored 0 and stayed in the denominator.
+    """
+    p1 = sm.get("pass_at_1")
+    exc = sm.get("harness_exceptions", 0) or 0
+    if p1 is None:
+        return 0.0, "<span class='sub'>拒绝输出（运行无效，不是 0 分）</span>"
+    cell = bar(p1 * 100, colour)
+    if exc:
+        cell += (f" <span style='color:#c98a4b'>（含 {exc} 次 harness 异常，"
+                 "已按 0 分计入分母）</span>")
+    return p1 * 100, cell
+
+
 def calibration_rows() -> list[str]:
     out = []
     for mode in CALIB_ORDER:
@@ -329,7 +361,7 @@ def calibration_rows() -> list[str]:
         body = [r for r in rows[1:] if "id" in r]
         tested = [r for r in body if r.get("result_changed") is not None and not r.get("trivial")]
         injectable = [r for r in body if r.get("result_changed") is not None]
-        presentation_only = mode in {"reorder_cols"}
+        presentation_only = mode in stats.PRESENTATION_ONLY_MODES
         agree = 0
         for r in tested:
             should_pass = presentation_only or not r["result_changed"]
@@ -388,9 +420,13 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
     s = headline["summary"] if headline else {}
 
     nf = stats.noise_floor()
+    n_dropped = len(read_jsonl(ROOT / "data" / "tasks_dropped.jsonl"))
+    head_p1 = s.get("pass_at_1")
+    head_exc = s.get("harness_exceptions", 0)
     cards = f"""
-      <div class="card"><h3>{(s.get('pass_at_1', 0) * 100):.1f}%</h3><p>pass@1（最佳配置）</p></div>
-      <div class="card"><h3>{s.get('n_tasks', 0)}</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
+      <div class="card"><h3>{f"{head_p1 * 100:.1f}%" if head_p1 is not None else "拒绝输出"}</h3>
+        <p>pass@1（最佳配置）{'，含 ' + str(head_exc) + ' 次 harness 异常' if head_exc else ''}</p></div>
+      <div class="card"><h3>{s.get('n_tasks', 0)}</h3><p>有效题目（另有 {n_dropped} 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>{s.get('avg_llm_steps', 0)}</h3><p>平均 LLM 调用次数 / 题</p></div>
       <div class="card"><h3>~¥{total_spend()[0] * 7.2:.1f}</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
       <div class="card"><h3>{total_spend()[1] / 1e6:.1f}M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
@@ -401,23 +437,40 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
     rows = []
     for tag in tags:
         sm = runs[tag]["summary"]
-        pct = sm.get("pass_at_1", 0) * 100
         colour = ("#8b8fa3" if tag.startswith("mock") else
                   "#4f9d8f" if tag.endswith("3shot") else
                   "#c98a4b" if tag.startswith("qwen") else "#5b7fd6")
+        # A withheld score renders as a refusal, never as 0.0%: the runner refuses to
+        # turn a measurement failure into a model score, and the report must not undo
+        # that by printing the placeholder the JSON used to carry.
+        pct, cell = pass_cell(sm, colour)
+        p1 = sm.get("pass_at_1")
         delta = "—"
-        if base and tag != "abl2-baseline" and not tag.startswith("mock"):
-            d = (sm["pass_at_1"] - base["summary"]["pass_at_1"]) * 100
-            delta = f"{d:+.1f}pp"
+        if (base and tag != "abl2-baseline" and not tag.startswith("mock")
+                and p1 is not None and base["summary"].get("pass_at_1") is not None):
+            delta = f"{(p1 - base['summary']['pass_at_1']) * 100:+.1f}pp"
         rows.append(
             f"<tr><td>{html.escape(RUN_LABELS[tag])}</td><td class='num'>{sm.get('n_tasks',0)}</td>"
-            f"<td style='min-width:180px'>{bar(pct, colour)}</td><td class='num'>{delta}</td>"
+            f"<td style='min-width:180px'>{cell}</td><td class='num'>{delta}</td>"
             f"<td class='num'>{sm.get('avg_llm_steps',0)}</td>"
             f"<td class='num'>{sm.get('avg_sql_attempts',0)}</td>"
             f"<td class='num'>{adherence(sm)}</td>"
+            f"<td class='num'>{sm.get('n_no_sql_executed', '—')}</td>"
             f"<td class='num'>{money(token_cost(list(runs[tag]['rows'].values()), sm.get('model','')))}</td></tr>"
         )
     runs_table = "\n".join(rows)
+
+    # The notes below used to carry transcribed figures, and one of them was wrong
+    # ("7 个单题簇", actually 8) while the correct value sat in another document. Every
+    # number a reader is asked to believe is now read out of the same summaries the
+    # tables are built from, so a re-run cannot leave a stale sentence behind.
+    def _sm(tag: str) -> dict:
+        return runs.get(tag, {}).get("summary", {})
+
+    q3, qb = _sm("qwen-3shot"), _sm("qwen-baseline")
+    d3, db = _sm("abl2-3shot"), _sm("abl2-baseline")
+    mr, mnr = _sm("m-repair"), _sm("m-norepair")
+    repair_off = stats.comparison("self-repair OFF vs baseline", "abl2-baseline", "abl2-norepair")
 
     calib = "\n".join(calibration_rows())
 
@@ -506,15 +559,20 @@ def build(runs: dict, traces: dict, tasks: dict) -> str:
  <h2>1 · 消融结果</h2>
  <table><thead><tr><th>配置</th><th class=num>题数</th><th>pass@1</th><th class=num>Δ baseline</th>
    <th class=num>LLM 步数</th><th class=num>SQL 尝试</th><th class=num>真正用过工具</th>
-   <th class=num>花费</th></tr></thead>
+   <th class=num>从未执行 SQL</th><th class=num>花费</th></tr></thead>
    <tbody>{runs_table}</tbody></table>
  <div class="note warn"><b>跨模型对比目前是混淆的，别当成能力排名。</b>Qwen 的 3-shot 准确率高于它自己的
-   baseline（75.0% vs 70.3%），但同一次运行里<b>只有 24% 的题目真正执行过 SQL，45 题一次工具都没调</b>
-   （baseline 是 89% / 0 题）。原因在示例格式：few-shot 是"问题 → SQL"两段式，不含工具调用，于是模型
-   模仿示例直接作答——它不再是个 agent，只是被问对了更多题。<b>prompt 格式改变了执行协议，而 pass@1
-   把这个报成了准确率提升。</b>这就是"真正用过工具"这一列存在的理由。</div>
- <div class="note"><b>关掉自修复后逐题结果完全不变（0 升 0 降）</b>——因为模型首次生成的 SQL
-   约 99% 直接可执行，根本没有错误可修。机制本身靠注入单独验证：开=96.2% 恢复，关=0%。
+   baseline（{q3.get('pass_at_1', 0):.1%} vs {qb.get('pass_at_1', 0):.1%}），但同一次运行里
+   <b>只有 {q3.get('protocol_adherence', 0):.0%} 的题目真正执行过 SQL，{q3.get('n_zero_tool_calls', 0)} 题一次工具都没调</b>
+   （baseline 是 {qb.get('protocol_adherence', 0):.0%} / {qb.get('n_zero_tool_calls', 0)} 题）。
+   另有 <b>{q3.get('n_no_sql_executed', 0)}/{q3.get('n_tasks', 0)} 题最终 SQL 来自模型散文、从未在库上执行过</b>，
+   <b>它们照常计分</b>——这一列就是为了让这件事在表里而不只在散文里。原因在示例格式：few-shot 是
+   "问题 → SQL"两段式，不含工具调用，于是模型模仿示例直接作答——它不再是个 agent，只是被问对了更多题。
+   <b>prompt 格式改变了执行协议，而 pass@1 把这个报成了准确率提升。</b></div>
+ <div class="note"><b>关掉自修复后逐题结果完全不变（{repair_off['fixed']} 升 {repair_off['broken']} 降）</b>
+   ——baseline 平均每题 {db.get('avg_sql_attempts', 0)} 次 SQL 尝试，也就是几乎没有错误可修。
+   机制本身靠注入单独验证：开={mr.get('self_repair_recovery_rate', 0):.1%} 恢复
+   （{mr.get('self_repair_opportunities', 0)} 次注入错误），关={mnr.get('self_repair_recovery_rate', 0):.0%}。
    所以诚实的结论是“该组件在本数据集上测不出增益”，不是“自修复提升了准确率”。</div>
 
  {significance_html()}

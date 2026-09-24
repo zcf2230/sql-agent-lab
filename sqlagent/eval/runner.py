@@ -150,13 +150,22 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
         "corruption": settings.corruption,
         "fewshot_k": settings.fewshot_k,
         "self_repair": settings.self_repair,
+        # The judge executes gold SQL and predictions on the local SQLite build, so the
+        # verdicts are a function of it - and unlike the parser version, this one is not
+        # in config_hash either. Recorded so a reader can tell which executor produced a
+        # stored verdict instead of assuming it was the one in front of them.
+        "sqlite_version": sqlite3.sqlite_version,
         "n_tasks": len(rows),
         "n_graded": len(graded),
         "n_trivial": len(rows) - len(graded),
         "n_corruption_applied": sum(1 for r in rows if r.get("corruption_applied")),
         "n_result_changed": sum(1 for r in rows if r.get("result_changed")),
         "valid": not invalid,
-        "pass_at_1": 0.0 if invalid else (round(len(correct) / len(graded), 4) if graded else 0.0),
+        # null, not 0.0. Refusing the score only worked at the CLI and report layer;
+        # the JSON on disk still said `pass_at_1: 0.0`, so anyone reading the file -
+        # or any later script that does - would read a measurement failure as a model
+        # that answered nothing correctly. The fourth review caught that gap.
+        "pass_at_1": None if invalid else (round(len(correct) / len(graded), 4) if graded else 0.0),
         "by_difficulty": {
             d: round(
                 sum(1 for r in graded if r["correct"] and r.get("difficulty") == d)

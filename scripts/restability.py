@@ -308,9 +308,16 @@ def analyse(model: str) -> int:
         print(f"  {forms} 种里有 {forms-1} 种都能做对、只有基准那一种失败的题："
               f"{r['robust_lucky']} —— 这些是措辞直接造成的误判。")
         if "understatement_pp" in r:
-            print(f"  这 {n} 道是 baseline 全部非 trivial 失败题的**普查**、不是抽样，所以外推不用乘系数："
+            print(f"  这 {n} 道是 baseline 全部非 trivial 失败题的**普查**、不是抽样，所以外推不用乘系数。")
+            print(f"  与高估侧对称，两种读法都给：读法 A「换一种说法即得分」 "
                   f"{r['understatement_numerator']}/{r['benchmark_tasks']} = "
-                  f"{r['understatement_pp']:.2f}pp 是 pass@1 **低估**的量。")
+                  f"**{r['understatement_pp']:.2f}pp**；读法 B「四种问法取平均」 "
+                  f"{r['understatement_credit_tasks']:.2f}/{r['benchmark_tasks']} = "
+                  f"**{r['understatement_pp_mean']:.2f}pp**")
+            print(f"  ⇒ pass@1 **低估** 的量按口径落在 {r['understatement_pp_mean']:.2f}–"
+                  f"{r['understatement_pp']:.2f}pp 之间。A 比 B 大，是因为那 {len(lucky)} 道里"
+                  "有一道四种问法只对 1 种（按平均只值 0.25 道）。")
+            print("  对模型有利的方向不许只报大口径——这条与高估侧用同一套读法命名。")
     elif fragile and not lucky:
         print("")
         print(f"  这批题基准问法全对，但 {len(fragile)} 道换个说法就错：pass@1 高估的部分。")
@@ -331,6 +338,11 @@ def analyse(model: str) -> int:
               f"{(r['published_rate']-r['mean_rate'])*100:.1f}pp = **{b:.1f}pp**")
         print(f"    两种读法差 {abs(a-b):.1f}pp——差在「一道题四种问法里错几种」，"
               "所以必须说清问的是哪一个。")
+        hlo, hhi = r.get("headline_ci", (0.0, 0.0))
+        print(f"    区间的两句实话：上面唯一的区间（{alo:.1f}–{ahi:.1f}pp）= 比例的 Wilson 区间"
+              f"× head 的点估计 {head:.1%}，**未计入 head 自身**（Wilson {hlo:.1%}–{hhi:.1%}，"
+              f"半宽约 {(hhi-hlo)/2*100:.1f}pp），真实区间只会更宽、方向偏乐观；"
+              "读法 B 是均值不是比例，**没有现成闭式 CI**，所以不配图区间。")
     return 0
 
 

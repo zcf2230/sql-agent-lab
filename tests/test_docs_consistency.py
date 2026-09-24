@@ -46,6 +46,16 @@ WITHDRAWN = [
     ("没有任何一项达到 p<0.05", "第三轮：该二分依赖聚合口径，骨架下 p 跨过 0.05"),
     ("改写只部分缓解", "第三轮：改写鲁棒性一次都没测，'部分缓解'是在描述没做过的实验"),
     ("仍然没有答案", "§17 补测成功侧后撤回：那是成功侧还没测完时的说法，现在两侧都有数"),
+    # Fourth review, F8: a prohibition that quotes the banned string verbatim turns the
+    # carrier list itself into a carrier. These are the exact strings, so the sites that
+    # used to restate them as warnings now have to describe them instead.
+    ("全被拦下", "§0 第一屏的压缩形式，把信用记给了从未被写路径挑战过的护栏"),
+    ("全部拦下", "第一轮撤回过一次，§0 换了个近义词活着 - 差一个字接不住等于没设"),
+    ("拦截率 100%", "第一版 README 的原句，被禁之后仍出现在别处的引文里"),
+    ("100% 拦截", "同上，另一个词序"),
+    ("混进准确率而无人察觉", "第四轮 F6：语法上只承诺'有人察觉'，听感上承诺了'没混进'"),
+    ("四份同配置基线", "第四轮 F7：噪声底集合与 COMPARISONS 注释互斥，现为三份"),
+    ("7 个单题簇", "第四轮 F1：实测 8，且 §16.4 曾用一句假解释替它开脱"),
     ("而非模型散文中的 SQL", "第一轮：agent.py 存在 _sql_from_prose 回退，全称否定句碰上一个反例"),
 ]
 
@@ -58,6 +68,28 @@ def test_withdrawn_claims_do_not_appear_where_conclusions_are_stated():
             if needle in text:
                 offenders.append(f"{name} 仍含 {needle!r}（撤回理由：{why}）")
     assert not offenders, chr(10).join(offenders)
+
+
+def test_transcribed_statistics_in_the_docs_equal_the_function_that_computes_them():
+    """A withdrawn claim is easy to catch - it is a fixed string. A number that is
+    *correct but copied* is harder: nothing goes red when the computation moves. The
+    fourth review found exactly this in the resume's own "加分句" ("7 个单题簇",
+    measured 8), and the correct value had been in §16.4 all along.
+
+    So every cluster-count sentence still standing in a conclusion-carrying document is
+    checked against `stats.cluster_ratio_tests()`, and §13 onward is exempt because that
+    is where superseded numbers are supposed to remain, quoted and labelled."""
+    from sqlagent import stats
+
+    want = stats.cluster_ratio_tests("abl2-baseline", "abl2-3shot")["singleton_clusters"]
+    offenders = []
+    for name, text in [("HANDOFF §0-§12", handoff_carriers()), ("RESUME", RESUME),
+                       ("README", README)]:
+        for m in re.finditer(r"(\d+) 个(?:是)?单题簇", text):
+            if int(m.group(1)) != want:
+                line = text[:m.start()].count(chr(10)) + 1
+                offenders.append(f"{name}:{line} 写 {m.group(1)}，实测 {want}")
+    assert not offenders, "文档里的簇计数与 stats 不一致：" + chr(10).join(offenders)
 
 
 def test_no_document_pins_the_test_count():
