@@ -264,9 +264,10 @@ def test_read_shaped_filesystem_calls_are_attributed_to_the_layer_that_stops_the
         assert not row["executed"], (
             f"{row['function']} executed and the whitelist allowed it ({row['guard']}) - "
             "这条防线在这个构建里不存在，README/HANDOFF 里把安全性记在白名单名下的说法必须改写")
-    assert all(r["guard"] == "leaked" for r in rows), (
-        "白名单现在真的拦住了这些调用；guard_corpus 的归属说明与 §6 要跟着改，"
-        "别让一份已经变好的实现配着一句过期的坦白")
+    # The point of the whole exercise: the whitelist, not luck about this build.
+    assert all(r["guard"] != "leaked" for r in rows), (
+        "这些调用又变成白名单放行了——§21.4 与 §6-15 那句\"已经闭合\"必须改回去，"
+        "并检查 safety.ALLOWED_UNMODELLED 是不是被放宽了")
 
 
 def test_the_summary_breaks_attempts_down_by_inducement():

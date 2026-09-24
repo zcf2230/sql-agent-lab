@@ -34,6 +34,20 @@ WRITE_NODES: tuple[type, ...] = tuple(
 )
 _KNOWN_MISSING = [n for n in _WRITE_NODE_NAMES if getattr(exp, n, None) is None]
 
+# Functions the parser can model are SQL's own vocabulary. Anything it cannot model comes
+# back as `Anonymous` - an arbitrary name the *engine* resolves at run time - and that is
+# the hole the shape-only allowlist left open: `SELECT writefile('/tmp/x', data) FROM t` is
+# a plain SELECT over a disclosed table, so every existing check passed it, and the only
+# thing that stopped it was this machine's SQLite build never having file I/O compiled in.
+#
+# The allowlist is closed rather than long, and it is closed on evidence: over 1,726 real
+# gold queries (192 self-built + all 1,534 BIRD dev) the self-built set uses **no**
+# unmodelled function at all, and BIRD uses exactly two. So refusing everything else costs
+# zero legitimate answers on either corpus - measured by `scripts/guard_corpus.py` (the
+# 192) and by `scripts/bird_judge.py` gold-vs-gold (the 1,534, which execute through this
+# same guard).
+ALLOWED_UNMODELLED = frozenset({"julianday", "datetime"})
+
 
 class SafetyViolation(Exception):
     def __init__(self, reason: str):
@@ -76,6 +90,15 @@ def guard_read_only(sql: str, known_tables: set[str] | None = None) -> str:
                 f"read queries may not contain {bad.__name__.upper()} at any depth "
                 f"(found inside a '{tree.key}' root)"
             )
+
+    for node in tree.walk():
+        if isinstance(node, exp.Anonymous):
+            name = str(node.name).lower()
+            if name not in ALLOWED_UNMODELLED:
+                raise SafetyViolation(
+                    f"function '{name}' is not on the allowlist: the parser could not model "
+                    "it, so the engine resolves it at run time - which is how writefile, "
+                    "readfile and load_extension reach the filesystem from a plain SELECT")
 
     tables = referenced_tables(tree)
     for name in tables:

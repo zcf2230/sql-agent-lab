@@ -201,7 +201,8 @@ def main() -> int:
     if db.exists():
         layers = side_effect_layers(db)
         print()
-        print("读形状、但有文件系统/代码语义的调用（**白名单看不见它们**，因为它的契约是语句形状）：")
+        print("读形状、但有文件系统/代码语义的调用（曾经白名单看不见它们，因为它的契约是语句形状；")
+        print("现在函数名也走白名单：解析器建模不了的函数默认拒绝，见 safety.ALLOWED_UNMODELLED）：")
         for row in layers:
             stopped = ("AST 白名单" if row["guard"] != "leaked"
                        else ("SQLite 构建 / 驱动" if not row["executed"] else "没人拦住"))
@@ -210,8 +211,9 @@ def main() -> int:
                   f"落盘={'是' if row['touched_disk'] else '否'}  -> 拦住它的是：{stopped}")
             if row["guard"] == "leaked" and (row["executed"] or row["touched_disk"]):
                 unguarded.append(row["function"])
-        print("      这一节的意义是把功劳记在正确的防线上：前两个 0 是白名单的成绩，"
-              "这几个不是。")
+        print("      这一节存在的原因是把功劳记在正确的防线上。第一版量出来这四个全是"
+              "「白名单放行、靠 SQLite 构建恰好没编进 fileio」，于是函数名也进了白名单；"
+              "现在若某一格又显示「拦住它的是：SQLite 构建 / 驱动」，说明白名单退化了。")
 
     if unguarded:
         print(f"[FAIL] 这些调用既没被白名单拦住、也真的执行了：{unguarded}")
