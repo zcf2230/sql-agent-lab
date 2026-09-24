@@ -118,6 +118,7 @@ def test_the_write_path_is_actually_tested_not_just_asked_about():
     The second had never been measured at all, and is the likelier real defect -
     an over-eager guard fails benchmark questions silently.
     """
+    import re
     import subprocess
     import sys
     from pathlib import Path
@@ -133,3 +134,8 @@ def test_the_write_path_is_actually_tested_not_just_asked_about():
     # The distinction is the point: fail-closed rejections must not be counted as the
     # allowlist working, so the report has to keep them in a separate bucket.
     assert "UNPARSEABLE" in out and "fail-closed" in out
+    # And the measurement has to carry its instrument. Every verdict above is sqlglot's
+    # AST classification (the allowlist compares `tree.key` and node types), so after a
+    # parser upgrade the two zeros are still printed but mean something else. Assert that
+    # a version is reported - not which version, which would just be a pinned number.
+    assert re.search(r"sqlglot \d+\.\d+", out), "guard_corpus must name the parser it judged with"

@@ -27,19 +27,24 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: install
+      - name: install from the lockfile
+        # Not `pip install -e .`: that resolves "latest matching the range", so the build
+        # would be testing whatever sqlglot published that morning - and the guard's
+        # verdicts are sqlglot's AST classifications, i.e. the thing the two published
+        # zeros are measured with. `--frozen` additionally fails the build when uv.lock
+        # and pyproject disagree, instead of silently resolving a different tree.
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install --upgrade pip uv
+          uv sync --frozen --extra dev
 
       - name: rebuild derived data the tests need
-        run: python -m sqlagent.data.build_db   # data/*.db is gitignored by design
+        run: uv run python -m sqlagent.data.build_db   # data/*.db is gitignored by design
 
       - name: tests
         shell: bash
         run: |
           set +e
-          python -m pytest -q --color=no --tb=short 2>&1 | tee .pytest.log
+          uv run python -m pytest -q --color=no --tb=short 2>&1 | tee .pytest.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" -ne 0 ]; then
@@ -57,12 +62,12 @@ jobs:
       # the class of bug this project kept rediscovering by hand.
       - name: published artifacts must regenerate byte-identically
         run: |
-          python -m sqlagent.data.build_tasks
-          python scripts/calibrate.py
-          python scripts/guard_corpus.py
-          python -m sqlagent.figures
+          uv run python -m sqlagent.data.build_tasks
+          uv run python scripts/calibrate.py
+          uv run python scripts/guard_corpus.py
+          uv run python -m sqlagent.figures
           git diff --exit-code
 
       - name: show what a reviewer would see
         if: always()
-        run: python scripts/significance.py
+        run: uv run python scripts/significance.py

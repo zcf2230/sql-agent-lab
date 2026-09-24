@@ -5,7 +5,17 @@ description = "A self-repairing Text-to-SQL agent with its own evaluation, traci
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
-    "sqlglot>=25.0",
+    # Bounded, because the safety guard's verdict IS sqlglot's output: the allowlist
+    # compares `tree.key` and `isinstance(node, WRITE_NODES)`, so a parser release that
+    # re-classifies a node can turn a write into an allowed read - or make a gold SELECT
+    # unparseable and move the "0 false rejects" number - without one byte of our code
+    # changing. `config_hash()` deliberately does not cover dependency versions, so
+    # nothing else would record that the instrument moved. uv.lock pins the exact
+    # resolution; this bound is the coarse guard for installs that ignore the lock.
+    # Verdicts re-checked identical on 30.18.0 (the venv that ran every published number)
+    # and on 30.19.0, which is what uv.lock resolves to today: 120 writes 0 pass-through,
+    # the same 88-allowlist / 32-fail-closed split, 192 gold reads 0 false rejects.
+    "sqlglot>=25.0,<31",
     "pydantic>=2.7",
 ]
 

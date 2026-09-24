@@ -22,6 +22,7 @@ audits the judge. This repo is built around that ordering.
 
    ```bash
    uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+   # 要精确复现我这棵依赖树：uv sync --frozen --extra dev（依赖锁在 uv.lock；CI 走这条）
    .venv/Scripts/python.exe -m sqlagent.data.build_db
    .venv/Scripts/python.exe -m sqlagent.data.build_tasks
    .venv/Scripts/python.exe -m pytest
@@ -100,6 +101,8 @@ verdict. This is what makes the first two figures checkable rather than assertiv
 
 ```bash
 uv venv --python 3.12 && uv pip install -e ".[dev]"
+# or install the exact tree CI uses (the guard's verdicts are sqlglot's AST, so the
+# instrument deserves a version): uv sync --frozen --extra dev
 
 python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons

@@ -41,7 +41,7 @@ tests/               全部测试，含"文档不得复述已撤回的主张"这
 | 不含 | 原因 | 怎么办 |
 |---|---|---|
 | `.env`、`secrets/` | 凭据用 Windows DPAPI 封存并绑定当前用户+机器，复制过去也解不开；不外发是唯一稳妥的做法 | 需要跑真实模型就在本机重新生成：`SQLAGENT_API_KEY=... python -m sqlagent.secrets` |
-| `.venv/` | 22 MB 里绝大部分是它 | `uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"` |
+| `.venv/` | 22 MB 里绝大部分是它 | `uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"`；想精确复现我这棵依赖树就用锁文件：`uv sync --frozen --extra dev` |
 | `data/*.db` | 派生物 | `python -m sqlagent.data.build_db`，固定种子，字节级一致 |
 | `runs/cache/` | 结果缓存，含本机绝对路径 | 不用重建；重新跑真实模型才会生成，同配置命中缓存不重复计费 |
 
@@ -56,6 +56,8 @@ tests/               全部测试，含"文档不得复述已撤回的主张"这
 
 ```bash
 uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+# 依赖树在 uv.lock 里（护栏判定用的是 sqlglot 的 AST，所以量具版本要有出处）：
+# uv sync --frozen --extra dev 是精确复现那条路，CI 走的就是它。
 .venv/Scripts/python.exe -m sqlagent.data.build_db
 .venv/Scripts/python.exe -m sqlagent.data.build_tasks
 .venv/Scripts/python.exe -m pytest                # 全绿（计数以输出为准，别信文档里的数）

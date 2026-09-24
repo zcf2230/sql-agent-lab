@@ -129,6 +129,10 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 
 ```bash
 uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
+# 想逐字节复现我这台机器的依赖树，用锁文件：uv sync --frozen --extra dev
+# 差别是 sqlglot 30.18（本节下面所有输出行都产自它）vs 30.19（锁里的解析结果）。
+# 30.19 上我实测过：166 条测试全绿、护栏 120 条写 0 穿透、88/32 拆分与 192 条读 0 误拒
+# 逐字不变，只多了几行 "unsupported syntax, falling back to Command" 的告警噪声。
 
 .venv/Scripts/python.exe -m sqlagent.data.build_db
 .venv/Scripts/python.exe -m sqlagent.data.build_tasks
@@ -233,7 +237,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 并列 top-k 不打分 | `data/tasks_dropped.jsonl` 10 条 | `python -m sqlagent.data.build_tasks` 输出 |
 `final_sql` 不取模型散文 | `agent.py:95` + 注释 | `tests/test_agent.py::test_a_hallucinated_column_returns_an_error_not_a_crash` |
 护栏是白名单 | `safety.py:17` | `tests/test_safety.py` 12 条逃逸样本，含 `WITH d AS (DELETE ... RETURNING *)` |
-模型实际尝试 6/26（不给比率） | `results/adversarial.jsonl` 的 `by_category` | `python -m sqlagent.adversarial`；**写路径另有 `python scripts/guard_corpus.py`：120 条写语句 0 穿透、192 条 gold 读 0 误拒，$0** |
+模型实际尝试 6/26（不给比率） | `results/adversarial.jsonl` 的 `by_category` | `python -m sqlagent.adversarial`；**写路径另有 `python scripts/guard_corpus.py`：120 条写语句 0 穿透、192 条 gold 读 0 误拒，$0；输出首行写明判定出自哪个 sqlglot 版本** |
 别名绕过被拦 | `runs/*.jsonl` 中 `catalog-02` 的两次尝试 | 报告里搜 `sqlite_schema` |
 缓存随判分器源码失效 | `config.py:61` + `:146` | `tests/test_config.py::test_code_digest_ignores_line_endings` |
 单种问法的分数含措辞噪声（低估 2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl`；同一份实现渲染在 `report.html` 第 3 节 | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
@@ -324,7 +328,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
   解题还是在认模板"，也是"192 题够不够"唯一有证据的回答方式；比扩题型便宜得多 |
   实花 **$0.301**（328 次调用；其中 $0.066 那一组因抽样设计错误无信息量，已如实留在 §17 结果〇） |
 | ✅ | 7 | push 之后核对 CI 的**首次真实运行**为绿，再把状态徽章加进 README 顶部 | 徽章不预先写：它现在指向一次真的跑完的运行。附带收获——那次运行在 **ubuntu runner** 上通过了"产物必须逐字节重生成得出来"，等于在另一台机器、另一个操作系统上复核了 §4.2 的承诺；本机复演只证明 Windows | ¥0 |
-| ☐ | 8 | 把 `sqlglot` 钉到测过的区间（现在 `>=25.0` 无上界），并让 `guard_corpus.py` 把它打印出来 | 护栏的白名单**建立在解析结果上**：一次 sqlglot 升级若改了 AST 形状，"0 穿透"这件事可能在没人改代码的情况下变质，而 CI 只会报"依赖装不上/测试红"，不会告诉你安全语义动了。本机实测 30.18 | ¥0（改一行 pyproject + 重跑 `guard_corpus.py`） |
+| ✅ | 8 | 护栏的语义依赖一个**无上界**的第三方解析器：`sqlglot>=25.0` 已改成 `>=25.0,<31`，新增 `uv.lock`（19 个包的精确版本），CI 改为 `uv sync --frozen` 从锁装，`guard_corpus.py` 把判定所用的解析器版本打进输出 | 白名单比的是 `tree.key` 与节点类，所以"0 穿透"这句话的真值属于 sqlglot；而 `config_hash` 里**没有**依赖版本，缓存与报告都不会因为量具换了而报警 | ¥0（30.18 与 30.19 两版判定实测逐字一致） |
 | ☐ | 2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
 | ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
 | ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
@@ -363,6 +367,8 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 24 | 边界选题用文件顺序补足名额 | 20 题里 13 题来自 `distinct_count` 一族——把一族的不稳定当成"边界样本"的不稳定，正是我在 §17 里批评过的抽样错误 | 改为逐族轮转、每族 ≤2 题，并把族分布打进输出；重跑前先在 `--dry-run` 里看见构成
 25 | 两个一次性脚本（`hd.py` 用来改文档、`stat_check.py` 做一次临时聚合）被提交并**公开**了，而且没有任何文件引用它们；`stat_check.py` 的聚合逻辑后来整个搬进了 `stats.cluster_sensitivity` | 审阅者把仓库根当作项目的形状，一个一次性脚本在那里就读起来像设计的一部分；而留下第二份聚合实现，正是本项目反复批评的"两个地方各算一套" | `git rm` 两个文件；`tests/test_artifacts.py` 断言仓库根不得出现 `.py`、且 `scripts/` 里每个文件都必须被某份文档指向
 26 | 测试套件只在 Windows 上跑过，而 `test_secrets.py` 用 `pytest.importorskip` 去保护一个**自己会 raise ImportError** 的模块 | 第一次真跑 CI（ubuntu runner）不是"DPAPI 那几条跳过"，而是**整个文件收集失败**——连与 DPAPI 完全无关的 dotenv 断言也一起红；本地 165 绿从没告诉过我这件事 | 平台可用性改成数据 `DPAPI_AVAILABLE`，报错推迟到真正调用 crypt32 的 `protect/unwrap`，且抛 `OSError`（`config.resolve_api_key` 本来就按"这里没有封存 key"处理它）；补一条非 Windows 分支的断言
+
+27 | 护栏白名单建立在 `sqlglot` 的 AST 上，而依赖写的是**无上界**的 `>=25.0`；`config_hash()` 又不含依赖版本 | 一次解析器发布可以在我们一个字节的代码都不改的情况下，把某个构造从 `Delete` 变成别的节点类（写语句以读的身份过白名单），或者反过来把某条 gold 读语句变成解析不了（"0 误拒"变质）——而 `config_hash` 不变，缓存照命中，README 照印那两个 0。CI 用 `pip install -e .` 还会让第一次红出现在发布那天，没有可归责的提交 | 加上界 `<31` + `uv.lock`（19 包精确版本）+ CI 改 `uv sync --frozen`；`guard_corpus.py` 输出首行报告"量具是谁"，测试断言它必须报告版本（断言"有出处"，不断言是哪个版本）；30.18 与 30.19 判定实测逐字一致
 
 **共同点**：这一节里的错误绝大多数不会导致崩溃，只会**产出一个看起来合理的错误数字**
 （或让一个本该能核对的产物变得无法核对）。这正是本项目全部设计针对的失效模式。

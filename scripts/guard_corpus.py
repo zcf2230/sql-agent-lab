@@ -25,6 +25,8 @@ import itertools
 import json
 from pathlib import Path
 
+import sqlglot
+
 from sqlagent.safety import SafetyViolation, guard_read_only
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -134,6 +136,9 @@ def main() -> int:
     # which is the required outcome - the label is written for the write corpus.
     false_rejects = [r for r in reads if classify(r) != "leaked"]
 
+    print(f"量具：sqlglot {sqlglot.__version__} 的 AST —— 白名单比的是 `tree.key` 与节点类，")
+    print("      换解析器就是换量具。下面两个 0 只在这一个版本上被验证过。")
+    print()
     print(f"写语句语料   {len(writes):4} 条")
     for kind, n in sorted(((k, outcomes.count(k)) for k in set(outcomes)), key=lambda kv: -kv[1]):
         print(f"   {n:4}  {kind}")
