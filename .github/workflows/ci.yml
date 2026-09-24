@@ -61,11 +61,20 @@ jobs:
       # artifact no longer follows from the code that produces it, this fails - which is
       # the class of bug this project kept rediscovering by hand.
       - name: published artifacts must regenerate byte-identically
+        # This is docs/HANDOFF.md §4.2's command list, so the sentence "跑 §4.2 就干净"
+        # is verified on a second machine instead of asserted by the author. Every
+        # `--analyse-only` call is free: it rebuilds its own task set from the generator
+        # and re-reads the committed results, never a model.
         run: |
           uv run python -m sqlagent.data.build_tasks
           uv run python scripts/calibrate.py
           uv run python scripts/guard_corpus.py
+          uv run python -m sqlagent.adversarial --seed-tasks
           uv run python -m sqlagent.figures
+          uv run python scripts/restability.py --pick families --analyse-only
+          uv run python scripts/restability.py --pick failures --analyse-only
+          uv run python scripts/restability.py --pick correct-representative --analyse-only
+          uv run python scripts/restability.py --pick correct-boundary --analyse-only
           git diff --exit-code
 
       - name: show what a reviewer would see
