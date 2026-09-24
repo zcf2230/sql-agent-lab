@@ -126,6 +126,12 @@ class Settings:
 
     # --- database / execution ---
     db_path: str = str(DATA_DIR / "learning_platform.db")
+    # Where a task's own `db` field is resolved from, for benchmarks whose questions
+    # live in many databases (BIRD). Deliberately *not* part of `config_hash`: the
+    # per-task `db` value is inside the task file, which the dataset digest already
+    # covers, so adding a machine-local absolute path to the hash would only make the
+    # key unshareable. The resolved root is recorded in each run's `_summary` instead.
+    db_root: str = ""
     max_result_rows: int = 200
     query_timeout_s: float = 5.0
 

@@ -350,6 +350,64 @@ def reliability_html() -> str:
 """
 
 
+def agent_on_bird_html() -> str:
+    """The same agent, same config, on BIRD - the number that puts 89% in context.
+
+    This section began as a judge-only experiment and its closing note said so: "no BIRD
+    score for the agent, and there shouldn't be one". That is superseded, and the reason it
+    is safe to publish is the second artifact - the same 60 answers re-scored under the
+    official rule. Without it, "the agent is worse here" and "my judge broke again on
+    someone else's data" are the same sentence, and this page has already admitted the
+    judge broke twice.
+    """
+    run = read_jsonl(RESULTS / "bird-agent.jsonl")
+    both = read_jsonl(RESULTS / "bird-agent-official.jsonl")
+    if not run or not both:
+        return ('<div class="note">这一节还没有 agent 在 BIRD 上的分数：<code>results/bird-agent.jsonl</code>'
+                ' 不存在。跑法见 <code>scripts/bird_tasks.py</code> 的头注释（真实调用，'
+                '先小规模定价再决定规模）。</div>')
+    a = run[0].get("_summary") or {}
+    o = both[0].get("_summary") or {}
+    n = o.get("judged", 0) or 1
+    mine, off = o.get("mine_pass", 0), o.get("official_pass", 0)
+    lo, hi = stats.wilson(mine, n)
+    base = stats.run_summary("abl2-baseline")
+    base_p1, agent_p1 = (base.get("pass_at_1") or 0), mine / n
+    tax = a.get("failure_taxonomy") or {}
+    # The reason codes are printed raw: `explain()` describes what each shape meant on the
+    # self-built set, and borrowing its gloss for a different benchmark would be putting my
+    # interpretation into the reader's mouth before the evidence.
+    tax_txt = "、".join(f"<code>{k}</code> {v} 题" for k, v in sorted(tax.items(), key=lambda kv: -kv[1]))
+    divergences = o.get("official_blind", 0) + o.get("mine_stricter", 0)
+    return f"""
+ <h3>同一个 agent、同一份配置，搬到 BIRD 上</h3>
+ <table><thead><tr><th>题集</th><th class=num>题</th><th class=num>pass@1</th><th>这套题是谁出的</th></tr></thead><tbody>
+  <tr><td>自制基准（baseline，无示例）</td><td class='num'>{base.get('n_tasks', 0)}</td>
+      <td class='num'>{base_p1:.1%}</td><td>我造的题、我写的 gold</td></tr>
+  <tr><td>BIRD dev（三档各 20 题、档内按库轮转）</td><td class='num'>{n}</td>
+      <td class='num'><b>{agent_p1:.1%}</b>（Wilson 95% [{lo:.1%}, {hi:.1%}]）</td>
+      <td>人写题，按官方协议附 <code>evidence</code> 外部知识，
+      {a.get('n_databases', 0)} 个真实库</td></tr>
+ </tbody></table>
+ <div class="note warn"><b>差 {(base_p1 - agent_p1) * 100:.1f}pp，而且这条差距不是判分器造成的。</b>
+   同一批 {n} 条真实答案在<b>两套口径</b>下各打一遍
+   （<code>python scripts/bird_judge.py --answers results/bird-agent.jsonl</code>，$0）：
+   我的判分器 {mine}/{n}、公开口径 {off}/{n}，<b>分歧 {divergences} 条</b>。
+   没有这一步，"我在 BIRD 上 {agent_p1:.0%}" 和 "我的判分器搬到真实数据又坏了" 是同一句话——
+   而本节上面刚记录过它确实在真实数据上坏过两次。</div>
+ <div class="note"><b>失败结构（{n - mine} 题）：</b>{tax_txt}。<br>
+   主因是<b>多返回了列</b>：题问名字和类型，模型把 id 一起带上。这和上面的注入结果合起来才完整——
+   公开口径对<b>重复行</b>盲目，但对<b>多出的列</b>严格（元组一变长就不等）。
+   所以"官方更宽松"必须限定到具体缺陷类上，不能当总判断。<br>
+   <b>本轮真实花费 ${a.get('total_cost_usd', 0):.4f}</b>（{n} 题、平均 {a.get('avg_llm_steps', 0)} 步/题，
+   即 ${a.get('total_cost_usd', 0) / n:.5f}/题）；规模是按这个单价先估后定的，不是拍的。
+   先跑的那次 12 题试算只用于定价，<b>产物没有保留</b>，所以这里不给它配数字。<br>
+   边界：{n} 题只占 dev 的 {n / 1534:.1%}，档内按库轮转<b>不是随机抽样</b>；单模型、单 prompt、单 seed；
+   <code>require_order</code> 一律 False；<b>没有与 BIRD 榜单比</b>（dev 划分与提交格式不同）。
+   文字版见 HANDOFF §20。</div>
+"""
+
+
 def external_benchmark_html() -> str:
     """The same judge, on somebody else's questions, next to the public metric's own rule.
 
@@ -415,6 +473,7 @@ def external_benchmark_html() -> str:
         f"{k.split(':')[0].replace('corrupt() failed', 'gold 解析失败')} {v} 条"
         for k, v in sorted(skips.items()))
     n_q = s.get("questions_selected", 0)
+    agent_html = agent_on_bird_html()
 
     return f"""
  <h2>5 · 判分器在别人造的题上（公开基准 BIRD dev）</h2>
@@ -450,13 +509,15 @@ def external_benchmark_html() -> str:
    <code>result_differs()</code> 比较列名而判分器不比列名（于是"用来自我解释这个指标的那一列"
    一直是错的，而主指标 100% 全绿），以及列标签的拼写噪声会<b>静默</b>退化成按位置比较。
    自制数据投影永远命名列，这两个都测不出来。</div>
+ {agent_html}
  <div class="note"><b>分母怎么来的，逐类报，不静默丢弃：</b>{skip_txt}。
    也就是说 <code>checked={checked}</code> 不等于 {n_q}×{len(modes)}——注入不进去的题不进入该类的分母。</div>
  <div class="note"><b>本节没测的（别当成测了）：</b>
    <code>require_order</code> 一律 False，公开基准没有"题面是否要求顺序"的标注，
    <b>顺序敏感性未被检验</b>（官方口径本身对行序盲目）；只跑 SQLite 方言；
    {n_q}/1534 题按难度分层但<b>不随机</b>；
-   <b>没有跑过 agent 做 BIRD 的题</b>，所以这里没有、也不该有"BIRD 上多少分"。
+   <b>agent 在 BIRD 上的分数见上面那块表</b>。本节最初写着"这里没有、也不该有 BIRD 上多少分"，
+   那句话已被 §20 作废——留在原处是因为读者应该看见它曾经成立过。
    判分器改动会不会动已发表判定，由 <code>python scripts/rejudge.py</code> 现场回答
    （判分是纯函数，$0；它自己打印覆盖条数与翻转数，所以那个数不抄在这里）。</div>
  <div class="sub">出处：<code>results/bird-judge.jsonl</code>（含判分执行器

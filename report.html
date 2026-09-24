@@ -51,8 +51,8 @@
         <p>pass@1（最佳配置）</p></div>
       <div class="card"><h3>192</h3><p>有效题目（另有 14 道被判为无法出题，已剔除）</p></div>
       <div class="card"><h3>4.22</h3><p>平均 LLM 调用次数 / 题</p></div>
-      <div class="card"><h3>~¥14.1</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
-      <div class="card"><h3>13.5M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
+      <div class="card"><h3>~¥14.6</h3><p>累计花费估算（按当前价目表，非账单）</p></div>
+      <div class="card"><h3>14.0M</h3><p>累计 prompt tokens（测量值，不是估算）</p></div>
       <div class="card"><h3>4 / 192（2.1pp）</h3><p>噪声底：同配置基线最大两两差异，来自 <code>sqlagent.stats</code></p></div>
       <div class="card"><h3 style="color:#e07a6b">0 / 3</h3><p>配对比较中达到 p&lt;0.05 的项数（详见第 2 节）</p></div>
     </div>
@@ -191,13 +191,41 @@
    <code>result_differs()</code> 比较列名而判分器不比列名（于是"用来自我解释这个指标的那一列"
    一直是错的，而主指标 100% 全绿），以及列标签的拼写噪声会<b>静默</b>退化成按位置比较。
    自制数据投影永远命名列，这两个都测不出来。</div>
+ 
+ <h3>同一个 agent、同一份配置，搬到 BIRD 上</h3>
+ <table><thead><tr><th>题集</th><th class=num>题</th><th class=num>pass@1</th><th>这套题是谁出的</th></tr></thead><tbody>
+  <tr><td>自制基准（baseline，无示例）</td><td class='num'>192</td>
+      <td class='num'>89.1%</td><td>我造的题、我写的 gold</td></tr>
+  <tr><td>BIRD dev（三档各 20 题、档内按库轮转）</td><td class='num'>60</td>
+      <td class='num'><b>41.7%</b>（Wilson 95% [30.1%, 54.3%]）</td>
+      <td>人写题，按官方协议附 <code>evidence</code> 外部知识，
+      11 个真实库</td></tr>
+ </tbody></table>
+ <div class="note warn"><b>差 47.4pp，而且这条差距不是判分器造成的。</b>
+   同一批 60 条真实答案在<b>两套口径</b>下各打一遍
+   （<code>python scripts/bird_judge.py --answers results/bird-agent.jsonl</code>，$0）：
+   我的判分器 25/60、公开口径 25/60，<b>分歧 0 条</b>。
+   没有这一步，"我在 BIRD 上 42%" 和 "我的判分器搬到真实数据又坏了" 是同一句话——
+   而本节上面刚记录过它确实在真实数据上坏过两次。</div>
+ <div class="note"><b>失败结构（35 题）：</b><code>column_count_mismatch</code> 22 题、<code>value_mismatch</code> 11 题、<code>row_count_mismatch</code> 2 题。<br>
+   主因是<b>多返回了列</b>：题问名字和类型，模型把 id 一起带上。这和上面的注入结果合起来才完整——
+   公开口径对<b>重复行</b>盲目，但对<b>多出的列</b>严格（元组一变长就不等）。
+   所以"官方更宽松"必须限定到具体缺陷类上，不能当总判断。<br>
+   <b>本轮真实花费 $0.0753</b>（60 题、平均 5.07 步/题，
+   即 $0.00126/题）；规模是按这个单价先估后定的，不是拍的。
+   先跑的那次 12 题试算只用于定价，<b>产物没有保留</b>，所以这里不给它配数字。<br>
+   边界：60 题只占 dev 的 3.9%，档内按库轮转<b>不是随机抽样</b>；单模型、单 prompt、单 seed；
+   <code>require_order</code> 一律 False；<b>没有与 BIRD 榜单比</b>（dev 划分与提交格式不同）。
+   文字版见 HANDOFF §20。</div>
+
  <div class="note"><b>分母怎么来的，逐类报，不静默丢弃：</b>gold 解析失败 7 条、drop_distinct 107 条、reflow 58 条、reorder_cols 86 条、wrong_limit 2 条。
    也就是说 <code>checked=460</code> 不等于 120×6——注入不进去的题不进入该类的分母。</div>
  <div class="note"><b>本节没测的（别当成测了）：</b>
    <code>require_order</code> 一律 False，公开基准没有"题面是否要求顺序"的标注，
    <b>顺序敏感性未被检验</b>（官方口径本身对行序盲目）；只跑 SQLite 方言；
    120/1534 题按难度分层但<b>不随机</b>；
-   <b>没有跑过 agent 做 BIRD 的题</b>，所以这里没有、也不该有"BIRD 上多少分"。
+   <b>agent 在 BIRD 上的分数见上面那块表</b>。本节最初写着"这里没有、也不该有 BIRD 上多少分"，
+   那句话已被 §20 作废——留在原处是因为读者应该看见它曾经成立过。
    判分器改动会不会动已发表判定，由 <code>python scripts/rejudge.py</code> 现场回答
    （判分是纯函数，$0；它自己打印覆盖条数与翻转数，所以那个数不抄在这里）。</div>
  <div class="sub">出处：<code>results/bird-judge.jsonl</code>（含判分执行器

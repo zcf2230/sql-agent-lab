@@ -64,12 +64,30 @@ def gold_tables(gold_sql: str) -> list[str]:
         return []
 
 
-def _conn(settings: Settings) -> sqlite3.Connection:
-    """One connection per thread: sqlite3 objects are not shareable across threads."""
-    key = f"conn_{settings.config_hash()}"
+def _db_of(task: dict, settings: Settings) -> str:
+    """Which database this task runs against.
+
+    Self-built sets are single-database and carry no `db`. Public benchmarks like BIRD
+    name one file per question, resolved under `--db-root`; failing loudly here is the
+    point, because a silently wrong root means the agent answers against an empty schema
+    and every verdict still computes.
+    """
+    rel = task.get("db")
+    if not rel:
+        return settings.db_path
+    root = Path(settings.db_root) if settings.db_root else DATA_DIR
+    path = (root / rel).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"task {task['id']}: no database at {path} - pass --db-root")
+    return str(path)
+
+
+def _conn(settings: Settings, db_path: str) -> sqlite3.Connection:
+    """One connection per (thread, database): sqlite3 objects are not shareable across threads."""
+    key = f"conn_{settings.config_hash()}_{abs(hash(db_path))}"
     existing = getattr(_local, key, None)
     if existing is None:
-        existing = sqlite3.connect(f"file:{(Path(settings.db_path)).as_posix()}?mode=ro", uri=True)
+        existing = sqlite3.connect(f"file:{(Path(db_path)).as_posix()}?mode=ro", uri=True)
         _local.__dict__[key] = existing
     return existing
 
@@ -81,8 +99,8 @@ def run_one(task: dict, settings: Settings, provider_factory, all_tasks: list[di
         cached["cached"] = True
         return cached
 
-    conn = _conn(settings)
     try:
+        conn = _conn(settings, _db_of(task, settings))
         # inside the try on purpose: one odd gold query must not kill a 200-task sweep
         provider = provider_factory(task)
         agent = SqlAgent(settings, Toolbox(conn, settings))
@@ -97,6 +115,7 @@ def run_one(task: dict, settings: Settings, provider_factory, all_tasks: list[di
             "reason": "harness_exception",
             "trivial": False,
             "stats": {},
+            **({"db": task["db"]} if task.get("db") else {}),
         }
     verdict = grade(conn, task["gold_sql"], result.final_sql, require_order=task.get("require_order", False))
     changed = None
@@ -121,6 +140,9 @@ def run_one(task: dict, settings: Settings, provider_factory, all_tasks: list[di
         "n_fewshot_msgs": len(shots),
         "result_changed": changed,
         "detail": verdict.detail,
+        # which database this verdict came from, when a task set spans several. Omitted
+        # for single-database sets so stored rows from those runs keep their shape.
+        **({"db": task["db"]} if task.get("db") else {}),
     }
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(json.dumps(row, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -155,6 +177,12 @@ def summarise(rows: list[dict], settings: Settings) -> dict:
         # in config_hash either. Recorded so a reader can tell which executor produced a
         # stored verdict instead of assuming it was the one in front of them.
         "sqlite_version": sqlite3.sqlite_version,
+        # How many databases a run actually spread over, and which root resolved them.
+        # A multi-database set whose `--db-root` was wrong would otherwise look like a
+        # model that suddenly cannot write SQL; the basename identifies the download
+        # without putting anyone's absolute path into a published artifact.
+        "n_databases": len({r["db"] for r in rows if r.get("db")}) or 1,
+        "db_root": Path(settings.db_root).name if settings.db_root else "",
         "n_tasks": len(rows),
         "n_graded": len(graded),
         "n_trivial": len(rows) - len(graded),
@@ -233,6 +261,9 @@ def main() -> int:
     ap.add_argument("--offset", type=int, default=0)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--tasks", type=Path, default=DATA_DIR / "tasks.jsonl")
+    ap.add_argument("--db-root", default="", help="where a task's own `db` path resolves from "
+                    "(multi-database sets like BIRD). Not part of config_hash - the per-task `db` "
+                    "value is inside the task file, which the dataset digest covers.")
     ap.add_argument("--tag", default=None, help="name for the results jsonl")
     ap.add_argument("--check-baseline", type=Path, default=None)
     ap.add_argument("--strict-gate", action="store_true")
@@ -240,6 +271,8 @@ def main() -> int:
     args = ap.parse_args()
 
     overrides = {"provider": args.provider, "model": args.model, "corruption": args.corruption}
+    if args.db_root:
+        overrides["db_root"] = args.db_root
     if args.tasks.exists():
         overrides["dataset_hash"] = dataset_digest(args.tasks)
     if args.no_self_repair:

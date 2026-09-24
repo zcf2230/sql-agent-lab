@@ -57,6 +57,9 @@ WITHDRAWN = [
     ("四份同配置基线", "第四轮 F7：噪声底集合与 COMPARISONS 注释互斥，现为三份"),
     ("7 个单题簇", "第四轮 F1：实测 8，且 §16.4 曾用一句假解释替它开脱"),
     ("而非模型散文中的 SQL", "第一轮：agent.py 存在 _sql_from_prose 回退，全称否定句碰上一个反例"),
+    # §20 ran the agent on BIRD, so the sentence that used to bound the claim is now false
+    # wherever it appears outside the record of it having been superseded.
+    ("没有跑过 agent 做 BIRD", "§20 跑了 60 题并给出 41.7%；这句话只在「它曾经成立」的引文里合法"),
 ]
 
 
@@ -123,6 +126,44 @@ def test_the_bird_figures_in_the_docs_equal_the_artifact_that_measured_them():
                 offenders.append(f"{name} 仍写着 {stale!r}——那是手抄的覆盖数，"
                                  f"以 `python scripts/rejudge.py` 自己打印的为准")
     assert not offenders, chr(10).join(offenders)
+
+
+def test_the_agent_bird_numbers_in_the_docs_equal_the_run_that_produced_them():
+    """The first screen, the README limits list and the resume all now state 41.7% next to
+    89.1%, the gap between them, and the "0 disagreements" control. Every one of those is a
+    copy of `results/bird-agent*.jsonl`; the same rule that caught 0.023 in three carriers
+    applies to a number that has never been written down before today."""
+    import json
+
+    from sqlagent import stats
+
+    def summary(name):
+        path = ROOT / "results" / name
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8").splitlines()[0])["_summary"]
+
+    run, both = summary("bird-agent.jsonl"), summary("bird-agent-official.jsonl")
+    if not run or not both:
+        import pytest
+        pytest.skip("no agent-on-BIRD artifacts; see scripts/bird_tasks.py")
+    n, mine, off = both["judged"], both["mine_pass"], both["official_pass"]
+    base = stats.run_summary("abl2-baseline")["pass_at_1"]
+    agent = mine / n
+    lo, hi = stats.wilson(mine, n)
+    needles = {f"{agent:.1%}": "BIRD pass@1", f"{base:.1%}": "自制 pass@1",
+               f"{(base - agent) * 100:.1f}pp": "两个数的差",
+               f"${run['total_cost_usd']:.4f}": "本轮真实花费"}
+    offenders = []
+    for name, text in [("HANDOFF", HANDOFF), ("README", README), ("RESUME", RESUME)]:
+        for needle, what in needles.items():
+            if needle not in text:
+                offenders.append(f"{name} 缺 {needle!r}（{what}）")
+        if f"{lo:.1%}" not in text and f"{lo:.0%}" not in text:
+            offenders.append(f"{name} 没有 BIRD 区间的下界 {lo:.1%}")
+    if mine != off:
+        offenders.append("两套口径判定不同，文档里的「0 分歧」这句必须改写")
+    assert not offenders, "agent-on-BIRD 的数字与产物不一致：" + chr(10).join(offenders)
 
 
 def _bird_carriers():

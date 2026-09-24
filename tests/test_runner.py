@@ -102,3 +102,95 @@ def test_dataset_digest_ignores_line_endings(tmp_path):
     crlf.write_bytes(body.replace("\n", "\r\n").encode("utf-8"))
     assert lf.read_bytes() != crlf.read_bytes(), "the fixture must actually differ on disk"
     assert dataset_digest(lf) == dataset_digest(crlf), "same content, different line endings, different digest"
+
+
+def _mini_db(path, value: str) -> None:
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE city (v TEXT)")
+    con.execute("INSERT INTO city VALUES (?)", (value,))
+    con.commit()
+    con.close()
+
+
+def _birdish_settings(tmp_path, **over):
+    from sqlagent.config import Settings
+
+    return Settings(provider="mock", model="mock", db_root=str(tmp_path),
+                    db_path=str(tmp_path / "a.db"), dataset_hash="multidb-test", **over)
+
+
+def _tasks():
+    return [
+        {"id": "q-a", "question": "which city?", "gold_sql": "SELECT v FROM city",
+         "gold_tables": ["city"], "db": "a.db"},
+        {"id": "q-b", "question": "which city?", "gold_sql": "SELECT v FROM city",
+         "gold_tables": ["city"], "db": "b.db"},
+    ]
+
+
+def test_a_task_can_name_its_own_database(tmp_path, monkeypatch):
+    """BIRD puts every question in a different SQLite file, so the agent's schema tools,
+    its SQL execution and the judge's gold run must all follow that one path. Get it
+    wrong and a verdict is computed against a database the model never saw - which still
+    produces a number."""
+    from sqlagent.eval import runner as runner_module
+    from sqlagent.eval.runner import run_one
+    from sqlagent.llm import MockProvider
+
+    monkeypatch.setattr(runner_module, "CACHE_DIR", tmp_path / "cache")
+    _mini_db(tmp_path / "a.db", "Beijing")
+    _mini_db(tmp_path / "b.db", "Paris")
+    settings = _birdish_settings(tmp_path)
+    tasks = _tasks()
+
+    def factory(task):
+        return MockProvider(gold_sql=task["gold_sql"], tables=["city"],
+                            corruption="none", self_repair=True)
+
+    rows = [run_one(t, settings, factory, tasks) for t in tasks]
+    assert [r.get("reason") for r in rows] == ["match", "match"], rows
+    assert [r["db"] for r in rows] == ["a.db", "b.db"], "the row must say which DB judged it"
+    assert summarise(rows, settings)["n_databases"] == 2
+
+
+def test_a_single_database_set_keeps_its_old_row_shape(tmp_path, monkeypatch):
+    """The `db` field is added only when a task names one, so nothing about the 192-task
+    artifacts' shape changes under this commit."""
+    from sqlagent.eval import runner as runner_module
+    from sqlagent.eval.runner import run_one
+    from sqlagent.llm import MockProvider
+
+    monkeypatch.setattr(runner_module, "CACHE_DIR", tmp_path / "cache")
+    _mini_db(tmp_path / "a.db", "Beijing")
+    task = {"id": "q-1", "question": "which city?", "gold_sql": "SELECT v FROM city",
+            "gold_tables": ["city"]}
+
+    def factory(t):
+        return MockProvider(gold_sql=t["gold_sql"], tables=["city"],
+                            corruption="none", self_repair=True)
+
+    row = run_one(task, _birdish_settings(tmp_path), factory, [task])
+    assert row["correct"] and "db" not in row
+    assert summarise([row], _birdish_settings(tmp_path))["n_databases"] == 1
+
+
+def test_a_task_pointing_at_a_missing_database_fails_loudly(tmp_path, monkeypatch):
+    """Wrong `--db-root` must not degrade into "the model cannot write SQL": the agent
+    would answer against a database it never got a schema for, and every verdict would
+    still compute."""
+    from sqlagent.eval import runner as runner_module
+    from sqlagent.eval.runner import run_one
+    from sqlagent.llm import MockProvider
+
+    monkeypatch.setattr(runner_module, "CACHE_DIR", tmp_path / "cache")
+    _mini_db(tmp_path / "a.db", "Beijing")
+    task = {"id": "q-x", "question": "which city?", "gold_sql": "SELECT v FROM city",
+            "gold_tables": ["city"], "db": "gone.db"}
+
+    def factory(t):
+        return MockProvider(gold_sql=t["gold_sql"], tables=["city"],
+                            corruption="none", self_repair=True)
+
+    row = run_one(task, _birdish_settings(tmp_path), factory, [task])
+    assert row["reason"] == "harness_exception", row
+    assert "--db-root" in row["error"], "the message has to name the flag that fixes it"

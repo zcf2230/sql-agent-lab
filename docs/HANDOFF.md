@@ -27,6 +27,8 @@
         同一批数据上，公开基准自己的 EX 看不见 13 条重复行里的 11 条；
         而我在列序与舍入上比它宽松        ← 两个方向都报；测的是判分器，不是 agent 得分
 DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.057，未达显著
+同一个 agent 在公开基准 BIRD dev（60 题、11 库）：**41.7%**（Wilson 95% 30.1–54.3）
+        与官方 set() 口径 0 分歧，所以差距不是判分器造成的；花 $0.0753   ← 89% 是考卷，不是能力上限
 同题换问法：判错的 19% 换问法即对、判对的 4.5% 换问法即错
         换问法：判错的 19% 换问法即对（低估 1.30–2.08pp）
         判对的 4.5% 换问法即错（高估 1.0–4.0pp）  ← 一次问法=一次抽样，不是测量
@@ -91,7 +93,7 @@ DeepSeek pass@1 89.1% → 93.2% (3-shot)      ← 真数字，但 McNemar p=0.05
 `data/tasks.jsonl` | **192 题**（easy 59 / medium 70 / hard 63），每题含 `gold_sql`、`require_order`、`gold_tables` |
 `data/tasks_dropped.jsonl` | **14 道被剔除**：`ambiguous_topk` 10、`vacuous_gold` 4，逐条原因 |
 `data/tasks_adversarial.jsonl` | 26 条探测，7 类 |
-`results/*.jsonl` | 逐题结果（真实运行 + mock，含被推翻的）、6 个校准文件、4 组重述实验、1 个公开基准（BIRD）判分实验。计数不写在这里——上一版写"12 次"，重述实验入库后就已过期：`ls results/*.jsonl | wc -l`；哪些运行在判分器当前版本下可比由 `scripts/rejudge.py` 自己说 |
+`results/*.jsonl` | 逐题结果（真实运行 + mock，含被推翻的）、6 个校准文件、4 组重述实验、1 个公开基准（BIRD）判分实验、2 个 BIRD 上的 agent 运行（`bird-agent.jsonl` 逐题结果 + `bird-agent-official.jsonl` 同一批答案在两套口径下的判定）。计数不写在这里——上一版写"12 次"，重述实验入库后就已过期：`ls results/*.jsonl | wc -l`；哪些运行在判分器当前版本下可比由 `scripts/rejudge.py` 自己说 |
 `runs/*.jsonl` | 逐调用 trace 原文（工作目录 50 MB；交付包内含报告用到的 6 个，11 MB）。**加锁之前的并发追加撕坏过记录**：本机数出 64 行不可解析，其中影响报告回放的 2 题由 `report.html` 第 9 节自己披露（只影响过程回放，不影响分数，§9-37） |
 `report.html` | 离线单文件，含 192 题 × 6 运行 trace 回放 |
 
@@ -252,6 +254,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 缓存随判分器源码失效 | `config.py:61` + `:146` | `tests/test_config.py::test_code_digest_ignores_line_endings` |
 单种问法的分数含措辞噪声（低估 1.30–2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样；两侧同口径） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl`；同一份实现渲染在 `report.html` 第 3 节 | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
 判分器在公开基准上仍然自洽，且公开 EX 有可量化的盲区 | `results/bird-judge.jsonl`（120 题 × 6 类注入，460 观测）；官方比较规则取自 `bird-bench/mini_dev` 的 `evaluation_ex.py:20`，其语义由 `tests/test_bird_judge.py` 钉住 | `python scripts/bird_judge.py`（$0，需先按脚本头注释下载 BIRD dev）；判分器改动是否影响已发表判定由 `python scripts/rejudge.py` 回答（$0） |
+自制基准的 89.1% 与公开基准的 41.7% 同时成立，且**低分不是判分器造成的** | `results/bird-agent.jsonl`（60 题逐题）+ `results/bird-agent-official.jsonl`（同一批答案在两套口径下的判定，0 分歧） | `python scripts/bird_tasks.py --dev-dir ../.external/dev --per-tier 20` 出题 → `python -m sqlagent.eval.runner --tasks data/tasks_bird-60.jsonl --db-root ../.external/dev --tag bird-agent`（$0.0753）→ `python scripts/bird_judge.py --answers results/bird-agent.jsonl`（$0） |
 无效运行不出分 | `runner.py:132` | `tests/test_runner.py::test_a_run_that_crashes_is_not_reported_as_a_low_score` |
 
 ---
@@ -292,7 +295,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
     且分桶极不均（`hard` 的 63 题里 35 题来自 `category_slice` 一族）。
     所以"easy/medium/hard 三档通过率"不能当作难度分析引用。
 12. **trace 文件本身带着洞**：加锁之前的并发追加撕坏了记录，本机 `runs/` 数出 64 行不可解析；报告第 9 节披露的是其中影响它自己显示的那 2 题（`runs/` 不入库，所以 clone 出去只核得上这 2 题，64 那半句话请以本机重跑为准）。**逐题结果与分数不受影响**（那些在 `results/`，由 runner 单写），但「这一题的过程我看不全」是一个已存在的事实，不是假设。复现：`python -m sqlagent.report` 的最后一行。
-13. **BIRD 实验只检验了判分器，没有检验 agent**：120 题、SQLite 方言、`require_order` 一律 False（**顺序敏感性未测**），也没有跑过任何模型做 BIRD 的题，所以这里没有、也不该有"BIRD 上多少分"。判分器与公开口径的差是双向的：我在重复行上更严（11 条官方看不见），在列置换与舍入上更宽松（34 + 28 条）。见 §19。
+13. **BIRD 上的 41.7% 是 60 题，不是 1534 题**：按难度分层、档内按库轮转，**不是随机抽样**；`require_order` 一律 False（**顺序敏感性未测**）；只跑 SQLite 方言；单模型单 prompt 单 seed。判分器与公开口径的差是双向的：我在重复行上更严（11 条官方看不见），在列置换与舍入上更宽松（34 + 28 条）；而在这一批真实答案上两套口径 **0 分歧**。见 §19（判分器）与 §20（agent）。
 
 ---
 
@@ -343,6 +346,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 | ✅ | 8 | 护栏的语义依赖一个**无上界**的第三方解析器：`sqlglot>=25.0` 已改成 `>=25.0,<31`，新增 `uv.lock`（19 个包的精确版本），CI 改为 `uv sync --frozen` 从锁装，`guard_corpus.py` 把判定所用的解析器版本打进输出 | 白名单比的是 `tree.key` 与节点类，所以"0 穿透"这句话的真值属于 sqlglot；而 `config_hash` 里**没有**依赖版本，缓存与报告都不会因为量具换了而报警 | ¥0（30.18 与 30.19 两版判定实测逐字一致） |
 | ✅ | 9 | **第四轮外部审阅（11 条，全部复现成立、全部接受）**：F1 簇计数改由 `stats` 现算；F2 两侧统一两口径；F3 拒分写成 `null` 且异常数标到分数旁；F4 记录判分执行器；F5 报告说明文字改派生；F6 消融表加"从未执行 SQL"列并改简历句子；F7 噪声底三份并消除注释互斥；F8 禁令改为描述、6 条字符串进 needle；F9 §9 补 6 行；F10 政策集合上收共用；F11 区间两句实话 | 三轮之后新问题的形状变了：不是算错，是**结论改了、最显眼的载体没跟**（F1/F6/F8）与**对自己的逻辑用到一半就停**（F2/F4/F7） | ¥0（详见 §18） |
 | ✅ | 10 | 把判分器搬到公开基准 BIRD dev 上实测，并顺手用 `rejudge.py` 回答"改了判分器，公布数字动没动" | 三轮审阅共同的弱点是"题是我造的"；这次把它放到 11 个真实库 + 人写 gold 上，于是抓到了两个自制数据永远抓不到的判分器 bug（§19.3） | ¥0（全程不调模型） |
+| ✅ | 11 | **让 agent 真跑 BIRD**：60 题、11 个真实库、同一份配置，$0.0753 | §19 只证明判分器可信，但"你的基准 89%"这句话真正的软肋是**题是我造的**；只有一个公开基准上的分数能回答它，而且必须先证明低分不是判分器背锅（`--answers` 那次 0 分歧） | 实花 **$0.0753**（≈¥0.54，即 $0.00126/题；先跑 12 题试算定规模，那次产物未保留，所以不给它配数字） |
 | ☐ | 2 | 扩充对抗探测到 100+ 条，并校准诱导强度 | 直接决定"安全"这一栏能不能进简历 | ¥0 建模 + 一轮真实运行约 ¥1.2 |
 | ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
 | ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
@@ -1130,5 +1134,48 @@ schema 没人见过**。自审能证明判分器*自洽*，证明不了它测的
   没被检验**；官方口径本身对行序盲目。
 - 只跑 SQLite 方言（BIRD 的 dev 就是 SQLite），没有碰 MySQL/PostgreSQL 分支。
 - 120/1534 题：按难度分层但不随机，`simple` 档的具体分布决定于 question_id 顺序。
-- **没有跑 agent 做 BIRD 的题**：这次只测判分器，所以没有任何"BIRD 上多少分"的
-  结论，也不该有。要那个数需要一轮真实调用（约 ¥0.3–1，几十题）。
+- ~~**没有跑 agent 做 BIRD 的题**~~：**这一条已作废**，§20 跑了（60 题、$0.0753、
+  41.7%）。留在原处是因为删掉它就看不出这句话曾经成立过。
+
+---
+
+## 20. 同一个 agent 拉到 BIRD 上：89% 与 42% 同时成立
+
+§19 结尾写着「没有跑过 agent 做 BIRD 的题，所以这里没有 BIRD 上多少分」。这一节把那句话
+作废：分数有了，而且它比 §19 那 460 条观测更能说明这个基准值多少。
+
+做法：`scripts/bird_tasks.py` 把 BIRD dev 出题面（按官方协议把 `evidence` 外部知识一起给
+模型，不给就等于换了一道题），每题带自己的 `db` 路径，runner 用 `--db-root` 解析；
+三档难度各 20 题、**档内按数据库轮转**，共 60 题、11 个真实库。模型、prompt、`max_steps`、
+判分器与 192 题那次**完全同一份配置**。
+
+> 轮转不是洁癖：先按 `question_id` 取前 4 题时，12 道题全落在 `california_schools` 一个库里。
+> 那正是 §9-24 记过的错（按文件顺序取样会被一族占满），这次在**另一批数据**上复现了，
+> 所以选题脚本自己打印「几题 / 几个库」。
+
+| 数字 | 值 |
+|---|---|
+| pass@1 | **25/60 = 41.7%**（Wilson 95% [30.1%, 54.3%]） |
+| 同一个 agent 在自制 192 题（baseline，无示例） | 89.1% |
+| 花费 | **$0.0753**（按 7.2 汇率 ≈¥0.54，即 $0.00126/题；平均 5.07 步/题） |
+| 判分口径分歧 | **0 条**：我的判分器与官方 `set()` 规则在这 60 条真实答案上判定完全一致（同为 25/60） |
+| 失败结构 | 列数不对 22、值不对 11、行数不对 2 |
+| 难度梯度 | simple 40% / moderate 45% / challenging 40% —— **没有梯度** |
+
+**这张表值钱的三点**：
+
+1. **89% 测的是考卷，不全是能力。** 同一个系统换到人写的题上差 47.4pp。自制基准回答的是
+   「模板生成器出的一切我是否答得对」，BIRD 回答的是「陌生人写的、带歧义的题我答得对多少」。
+   两个数必须挨着写；只写 89% 就是这个项目从头到尾批评的挑考卷行为。
+2. **低分不是判分器背锅，而且这条是单独花 $0 验的**：`python scripts/bird_judge.py --answers
+   results/bird-agent.jsonl` 把 60 条真实答案同时在两套口径下重打一遍，**0 分歧**。
+   没有这一步，「我在 BIRD 上 42%」和「我的判分器搬到真实数据上坏了」根本无法区分——
+   而 §19 已经证明我的判分器在真实数据上出过两个 bug，所以这个怀疑是完全合理的。
+3. **失败主因是「多返回了列」（22/35）**：题问名字和类型，模型把 id 一起带上。这和 §19.2
+   合起来才完整——公开口径对**重复行**盲目（13 个里看不见 11 个），但对**多出的列**严格
+   （元组一变长就不等）。所以「官方宽松」这个说法必须限定到具体的缺陷类上，不能当总判断。
+
+**这一节的边界**：60 题只占 dev 的 3.9%，档内按库轮转、**不是随机抽样**；
+`require_order` 一律 False，顺序敏感性仍未测；单模型、单 prompt、单 seed；
+`avg_sql_attempts` 1.33、护栏触发 0 次，也就是说自修复在 BIRD 上同样几乎没被触发（与 §6-1
+一致，不是新问题）。**没有和 BIRD 榜单比**：榜上的 dev 划分与提交格式与此处不同。

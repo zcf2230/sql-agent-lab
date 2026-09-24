@@ -225,3 +225,28 @@ def test_pass_cell_keeps_a_refusal_and_a_healthy_zero_apart():
     assert "harness" not in clean[1]
     real_zero = pass_cell({"pass_at_1": 0.0, "harness_exceptions": 0})
     assert "拒绝输出" not in real_zero[1], "a measured 0% is not a refusal"
+
+
+def test_generated_report_shows_the_agent_on_bird_gap_and_its_control():
+    """The 89% headline and the 41.7% external number have to sit on the same page, and so
+    does the control that makes the second one meaningful: the same answers re-scored under
+    the official rule. Without that control the gap is indistinguishable from the judge
+    breaking again - which section 5 has already admitted happened twice."""
+    if not REPORT_HTML:
+        pytest.skip("report.html not generated; run `python -m sqlagent.report`")
+    run = report.read_jsonl(report.RESULTS / "bird-agent.jsonl")
+    both = report.read_jsonl(report.RESULTS / "bird-agent-official.jsonl")
+    if not run or not both:
+        pytest.skip("no agent-on-BIRD artifacts; see scripts/bird_tasks.py")
+    a, o = run[0]["_summary"], both[0]["_summary"]
+    n = o["judged"]
+    base = stats.run_summary("abl2-baseline")["pass_at_1"]
+    lo, hi = stats.wilson(o["mine_pass"], n)
+    for needle in [f"{o['mine_pass'] / n:.1%}", f"{base:.1%}", f"{(base - o['mine_pass'] / n) * 100:.1f}pp",
+                   f"[{lo:.1%}, {hi:.1%}]", f"我的判分器 {o['mine_pass']}/{n}",
+                   f"公开口径 {o['official_pass']}/{n}", f"分歧 {o['official_blind'] + o['mine_stricter']} 条",
+                   f"${a['total_cost_usd']:.4f}"]:
+        assert needle in REPORT_HTML, f"report.html does not carry {needle!r}"
+    for reason, count in a["failure_taxonomy"].items():
+        assert f"<code>{reason}</code> {count} 题" in REPORT_HTML, f"{reason} row missing"
+    assert "没有跑过 agent 做 BIRD 的题" not in REPORT_HTML, "the superseded claim survived the new run"

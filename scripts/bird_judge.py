@@ -42,7 +42,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from sqlagent import db  # noqa: E402
+from sqlagent import db, stats  # noqa: E402
 from sqlagent.eval.scoring import execute, grade, result_differs, score_execution  # noqa: E402
 from sqlagent.llm import corrupt  # noqa: E402
 from sqlagent.stats import PRESENTATION_ONLY_MODES  # noqa: E402
@@ -94,11 +94,90 @@ def public_verdict(gold_rows: list, pred_rows: list) -> bool:
     return key(gold_rows) == key(pred_rows)
 
 
+def score_answers(dev_dir: Path, dbs: dict[str, Path], answers: Path, out: Path) -> int:
+    """Re-score a stored agent run under both metrics: mine (as stored) and the official rule.
+
+    The injection experiment answers "could the two rules disagree?". This one answers the
+    question a reviewer actually asks about a low BIRD score: "is the agent failing, or is
+    your judge failing it?" - measured on real model answers instead of synthetic defects.
+    $0: the answers are already on disk, and judging is a pure function of them.
+    """
+    rows = [json.loads(l) for l in answers.read_text(encoding="utf-8").splitlines() if l.strip()]
+    run_summary = rows[0].get("_summary") or {}
+    body = [r for r in rows[1:] if "id" in r]
+    if not body:
+        raise SystemExit(f"{answers.name} has no per-task rows")
+
+    gold_by_qid = {int(r["question_id"]): r for r in load_gold(dev_dir)}
+    out_rows, missing = [], []
+    mine = official = 0
+    blind = stricter = 0
+    shapes: Counter[str] = Counter()
+
+    for r in body:
+        try:
+            qid = int(str(r["id"]).split("-q", 1)[1])
+        except (IndexError, ValueError):
+            missing.append(str(r["id"]))
+            continue
+        q = gold_by_qid.get(qid)
+        path = dbs.get(str(q["db_id"])) if q else None
+        if not q or not path or not str(q.get("SQL") or "").strip():
+            missing.append(str(r["id"]))
+            continue
+        conn = db.connect_ro(path)
+        gold, pred = execute(conn, str(q["SQL"])), execute(conn, r.get("final_sql") or "")
+        conn.close()
+        off = public_verdict(gold.rows, pred.rows) if gold.ok and pred.ok else False
+        m = bool(r["correct"])
+        mine += m
+        official += off
+        if m and not off:
+            stricter += 1
+        if off and not m:
+            blind += 1
+        shapes[f"gold {len(gold.columns)} col / pred {len(pred.columns) if pred.ok else '执行失败'} col"] += 1
+        out_rows.append({"id": r["id"], "db_id": str(q["db_id"]), "mine": m, "official": off,
+                         "mine_reason": r.get("reason"), "gold_shape": [len(gold.columns), len(gold.rows)] if gold.ok else None,
+                         "pred_shape": [len(pred.columns), len(pred.rows)] if pred.ok else None,
+                         "pred_error": None if pred.ok else pred.error_type})
+
+    n = len(out_rows)
+    summary = {
+        "answers": answers.name, "model": run_summary.get("model"), "judged": n,
+        "not_matched_to_dev": missing,
+        "mine_pass": mine, "official_pass": official,
+        "official_blind": blind, "mine_stricter": stricter,
+        "sqlite_version": sqlite3.sqlite_version,
+        "public_rule": PUBLIC_RULE,
+    }
+    out.parent.mkdir(exist_ok=True)
+    with out.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps({"_summary": summary}, ensure_ascii=False) + "\n")
+        for row in out_rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    lo_m, hi_m = stats.wilson(mine, n) if n else (0.0, 0.0)
+    lo_o, hi_o = stats.wilson(official, n) if n else (0.0, 0.0)
+    print(f"{answers.name}: {n} 条真实模型答案重新打分（$0，不调模型）")
+    print(f"  我的判分器   {mine}/{n} = {mine / n:.1%}  Wilson 95% [{lo_m:.1%}, {hi_m:.1%}]")
+    print(f"  公开口径     {official}/{n} = {official / n:.1%}  Wilson 95% [{lo_o:.1%}, {hi_o:.1%}]")
+    print(f"  分歧：官方判对我判错 {blind} 条；我判对官方判错 {stricter} 条；"
+          f"未能对上 dev.json 的 {len(missing)} 条")
+    for k, v in shapes.most_common(4):
+        print(f"    列数形状 {k}: {v}")
+    print(f"  -> {out.relative_to(ROOT)}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dev-dir", default=str(ROOT.parent / ".external" / "dev"))
     ap.add_argument("--per-tier", type=int, default=40)
     ap.add_argument("--out", default=str(ROOT / "results" / "bird-judge.jsonl"))
+    ap.add_argument("--answers", default=None,
+                    help="a stored run (results/*.jsonl): re-score it under both metrics instead "
+                    "of injecting defects")
     args = ap.parse_args()
 
     dev_dir = Path(args.dev_dir)
@@ -110,6 +189,12 @@ def main() -> int:
             "This experiment is $0 and calls no model; it is deliberately not in CI, "
             "because a 346 MB third-party download does not belong in a build.")
     dbs = bird_databases(dev_dir)
+    if args.answers:
+        ans = Path(args.answers)
+        if not ans.is_absolute():
+            ans = ROOT / args.answers
+        return score_answers(dev_dir, dbs, ans,
+                             ROOT / "results" / f"{ans.stem}-official.jsonl")
     rows = pick(load_gold(dev_dir), args.per_tier)
     print(f"BIRD dev: {len(dbs)} databases with a SQLite file, {len(rows)} questions selected "
           f"({args.per_tier}/difficulty tier, sorted by question_id)")

@@ -32,7 +32,8 @@ data/                题库 + 被剔除题目及原因 + 四组重述实验的�
 results/             每次运行的逐题结果 —— README 里每个百分比的出处
 runs/                trace 原文（report.html 与 docs/figures/trace.svg 的数据源）
 scripts/             calibrate.py 校准扫描、significance.py 显著性、guard_corpus.py 护栏双向测量、
-                     restability.py 同题重述实验、bird_judge.py 公开基准(BIRD)上测判分器、
+                     restability.py 同题重述实验、bird_tasks.py 把 BIRD dev 出题面、
+                     bird_judge.py 在 BIRD 上测判分器（--answers 可把已存答案在两套口径下重打）、
                      rejudge.py 用当前判分器重判全部已存答案（回答"改了判分器，数字动没动"）
 tests/               全部测试，含"文档不得复述已撤回的主张"这一类一致性断言
 ```
