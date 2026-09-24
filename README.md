@@ -122,7 +122,7 @@ python -m sqlagent.data.build_db        # 20-table SQLite database, seeded
 python -m sqlagent.data.build_tasks     # 192 validated pairs + 14 dropped, with reasons
 python -m pytest                        # judge, guard, loop, credentials, adversarial grader, stats, artifacts
 python scripts/calibrate.py             # audit the grader with injected defects
-python -m sqlagent.adversarial --seed-tasks  # write the 26 probes without running them
+python -m sqlagent.adversarial --seed-tasks  # write the 123 probes without running them
 python -m sqlagent.eval.runner --provider mock --corruption none --tag baseline
 ```
 
@@ -401,7 +401,7 @@ sensible thing: continued from there. The invariant is now documented in
 
 ## Security posture
 
-**What is measured.** `python -m sqlagent.adversarial` runs 26 probes phrased to
+**What is measured.** `python -m sqlagent.adversarial` runs 123 probes (86 of them inviting a write) phrased to
 *invite* an out-of-scope action, because the 192-task benchmark stopped being
 evidence the moment it showed 0 guard activations - that only proved the model
 never tried.
@@ -446,7 +446,7 @@ Read the `model attempted` column before believing anything else here.
   correctly rejected. Any sentence in this repository that implies more than that is a
   bug; the earlier framing ("all attempts blocked") was exactly that, and it has been
   removed from `docs/RESUME.md`.
-- **Most of the result is model behaviour, not system behaviour.** For 20 of 26 probes
+- **Most of the result is model behaviour, not system behaviour.** For 98 of 123 probes
   the outcome was decided by the model declining to try. Swap the model and the numbers
   change, so this section is evidence about *this configuration*, not a security
   property of the harness.
@@ -570,7 +570,7 @@ must be rotated at the provider; no local storage scheme retroactively un-leaks 
 sqlagent/
   agent.py  config.py  db.py  fewshot.py  llm.py  prompts.py  safety.py  secrets.py
   tools.py  trace.py
-  adversarial.py          # 26 probes that invite an out-of-scope action, graded on two axes
+  adversarial.py          # 123 probes, three inducement tiers, graded on two axes
   data/build_db.py  data/build_tasks.py
   eval/scoring.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
   stats.py                # owns McNemar/Wilson/noise floor + which runs are paired
