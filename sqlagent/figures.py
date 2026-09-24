@@ -153,7 +153,8 @@ def bird_svg() -> str:
     modes = [m for m in CALIB_ORDER if m in per]
     maxn = max((per[m]["checked"] for m in modes), default=1) or 1
 
-    w, h = 980, 148 + len(modes) * 62 + 36
+    # The bottom panel needs room for a title, two bars and an axis.
+    w, h = 980, 148 + len(modes) * 62 + 208
     body = _t(20, 34, "同一个判分器，搬到别人写的题上（BIRD dev）", 16, INK, weight="600")
     body += _t(20, 56, f"{s.get('questions_selected', 0)} 道人写 gold、{s.get('databases', 0)} 个真实库、"
                        f"{s['checked']} 条注入观测；条长按可比观测数缩放", 12, DIM)
@@ -185,7 +186,58 @@ def bird_svg() -> str:
                    11, DIM)
         y += 62
     body += _t(20, y + 18, '分歧两个方向都有：不拿"官方看不见重复行"冒充"我的判分器更好"', 12, DIM)
+
+    # Bottom panel: the same agent scored by this judge on two question sets. It belongs in
+    # this figure rather than in its own because the two halves are one argument - the judge
+    # agrees with the public rule here, so the score gap below is about the questions.
+    panel = y + 58
+    body += _t(20, panel, "同一个 agent、同一份判分器，换一套考卷", 14, INK, weight="600")
+    scores = _score_panel()
+    bar_l, bar_r = 260, 700
+    scale = lambda pct: bar_l + pct / 100.0 * (bar_r - bar_l)
+    for i, row in enumerate(scores):
+        ry = panel + 22 + i * 46
+        body += _t(20, ry + 18, row["label"], 12, INK)
+        body += _t(20, ry + 36, row["sub"], 11, DIM)
+        x0, x1 = scale(row["lo"]), scale(row["hi"])
+        mid = ry + 14
+        body += f'<rect x="{scale(row["pct"]):.1f}" y="{ry+6}" width="3" height="20" fill="{NEUTRAL}"/>'
+        body += f'<line x1="{x0:.1f}" y1="{mid}" x2="{x1:.1f}" y2="{mid}" stroke="{DIM}"/>'
+        body += f'<line x1="{x0:.1f}" y1="{mid-7}" x2="{x0:.1f}" y2="{mid+7}" stroke="{DIM}"/>'
+        body += f'<line x1="{x1:.1f}" y1="{mid-7}" x2="{x1:.1f}" y2="{mid+7}" stroke="{DIM}"/>'
+        body += _t(bar_r + 16, ry + 16, f"{row['pct']:.1f}%  [{row['lo']:.1f}%, {row['hi']:.1f}%]",
+                   11, INK)
+        body += _t(bar_r + 16, ry + 34, row["note"], 11, DIM)
+    axis = panel + 22 + len(scores) * 46 + 6
+    for pct in (0, 25, 50, 75, 100):
+        body += _t(scale(pct), axis + 12, f"{pct}%", 10, DIM, "middle")
+    body += _t(20, axis + 34, "两条须线不重叠：差距不是抽样噪声。BIRD 那 60 题在两套口径下判定完全一致，"
+                              "所以差距来自考卷，不来自判分器。", 11, DIM)
     return _svg(w, h, body, "Grader vs the public benchmark's own comparison rule")
+
+
+def _score_panel() -> list[dict]:
+    """pass@1 with Wilson intervals, for the two question sets the same agent answered."""
+    lines = read_jsonl(ROOT / "results" / "bird-agent-official.jsonl")
+    if not lines:
+        return []
+    o = lines[0].get("_summary") or {}
+    judged, mine = o.get("judged", 0), o.get("mine_pass", 0)
+    if not judged:
+        return []
+    base = stats.run_summary("abl2-baseline")
+    n0 = base.get("n_graded") or 0
+    if not n0:
+        return []
+    b_lo, b_hi = stats.wilson(round(base["pass_at_1"] * n0), n0)
+    a_lo, a_hi = stats.wilson(mine, judged)
+    return [
+        {"label": "自制基准", "sub": f"{n0} 题 · 我造的题、我写的 gold", "note": "同一模型同一配置",
+         "pct": base["pass_at_1"] * 100, "lo": b_lo * 100, "hi": b_hi * 100},
+        {"label": "BIRD dev", "sub": f"{judged} 题 · 人写题、11 个真实库",
+         "note": f"官方口径同分（{o.get('official_pass', 0)}/{judged}）",
+         "pct": mine / judged * 100, "lo": a_lo * 100, "hi": a_hi * 100},
+    ]
 
 
 def trace_svg() -> str:
