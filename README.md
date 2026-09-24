@@ -33,8 +33,8 @@ audits the judge. This repo is built around that ordering.
    ```
 
    **预期输出写在 `docs/HANDOFF.md` §4.2**，可逐字对照。若对不上，请把它当缺陷提出。
-5. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7）。其中两处我自己认为最弱：
-   执行准确率作为唯一指标是否够；模板生成基准的难度标签是我贴的、不是实测的。
+5. **请重点质疑这 8 处**（`docs/HANDOFF.md` §7，第五轮版）。其中两条我自己答不出：
+   89%（自制）与 41.7%（BIRD）之间那道差距我没有拆开过；`谎称已完成` 那一格降级之后已经没有结论。
 6. **反馈请填表**：做过工程/评测的填 `docs/REVIEW_TEMPLATE.md`（勾选为主，15–25 分钟）；
    不想碰命令行的填 `docs/REVIEW_TEMPLATE_NONTECH.md`（约 10 分钟，只需要"看不看得懂、
    信不信"的判断）。
