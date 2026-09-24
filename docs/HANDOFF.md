@@ -133,6 +133,7 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 # 差别是 sqlglot 30.18（本节下面所有输出行都产自它）vs 30.19（锁里的解析结果）。
 # 30.19 上我实测过：166 条测试全绿、护栏 120 条写 0 穿透、88/32 拆分与 192 条读 0 误拒
 # 逐字不变，只多了几行 "unsupported syntax, falling back to Command" 的告警噪声。
+# CI 从锁文件装，所以"产物必须逐字节重生成得出来"那一步现在也是在 30.19 上过的。
 
 .venv/Scripts/python.exe -m sqlagent.data.build_db
 .venv/Scripts/python.exe -m sqlagent.data.build_tasks
