@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HANDOFF = (ROOT / "docs" / "HANDOFF.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 RESUME = (ROOT / "docs" / "RESUME.md").read_text(encoding="utf-8")
+ARTICLE = (ROOT / "docs" / "ARTICLE.md").read_text(encoding="utf-8")
 REPORT = (ROOT / "report.html").read_text(encoding="utf-8", errors="replace")
 
 
@@ -65,9 +66,12 @@ WITHDRAWN = [
 
 def test_withdrawn_claims_do_not_appear_where_conclusions_are_stated():
     offenders = []
+    # ARTICLE is the carrier with the widest audience and, until now, the only one not
+    # scanned: the withdrawn 23% ratio lived in its title through three rounds of review
+    # that each added a new forbidden string to this list.
     for needle, why in WITHDRAWN:
         for name, text in [("HANDOFF §0-§12", handoff_carriers()), ("README", README),
-                           ("RESUME", RESUME), ("report.html", REPORT)]:
+                           ("RESUME", RESUME), ("ARTICLE", ARTICLE), ("report.html", REPORT)]:
             if needle in text:
                 offenders.append(f"{name} 仍含 {needle!r}（撤回理由：{why}）")
     assert not offenders, chr(10).join(offenders)
