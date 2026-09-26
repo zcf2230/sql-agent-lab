@@ -1516,3 +1516,45 @@ accuracy, which is still far from the human result of 92.96%"）。
   管道与判分器，不是模型）。**尚无真实模型跑分**——本机无 API key；live 跑法：
   `uv run python scripts/fin_eval.py --model deepseek-chat`（估约 250 次 LLM 调用，成本与主基准
   同量级的零头）。README 新章节同日入库。
+
+### 27.1 v1 试跑抓出的三个出题 bug 与最终跑分（2026-09-26 深夜）
+
+第一次 live 跑分（83 题、digest `7ce52c5b`、$0.089）没有得到"最终数字"——它抓出了**出题器自己的三个 bug**，
+全部是真实审阅场景里"模型错了"先于"作者错了"被怀疑的那类：
+
+1. **screening 计数题的元组解包反置**。`_screen_defs` 的元组是（中文期名, 日期），循环写成
+   `for rd, label in _screen_defs`，于是题面拿到裸日期、SQL 拿到 `report_date='2025年年报'`
+   ——永远匹配不到，六个 COUNT gold 全是 0。模型答 2/3/5 才是真值；`vacuous` 守卫没接住它，
+   因为 COUNT 永远返回一行，0 藏在**值**里。守卫已补（`vacuous_zero`：单值 gold 恰为 0 即丢弃）。
+2. **topk 单公司题的模板残词**。"…的归母净利润最高的值是多少亿元"是"期间内最高"模板拼到单点
+   查值上的产物，模型按字面返回全部期间排序是**更忠实**的读法。已改为真·期内 top-k
+   （"四个报告期中最高的是哪一期"），LIMIT 1 并列照旧丢弃。
+3. **goodwill 筛选题静默缺失**。同一个解包 bug 让 `_goodwill_thresholds('2025年年报')` 查空，
+   整族题没生成也没留痕。修复后 screening 从 6 题恢复到 12 题（商誉筛选 6 + 计数 6）。
+
+题集重建为 **89 题**（74 可答 + 15 拒答），digest **`967c8491`**（test_astock_tasks 已同步钉死）。
+v1 的 83 题跑分作废，只在 history 里。
+
+**凭据事件（本项目自己的测试抓的）**：跑分时把 key 明文写进 `.env`，
+`test_no_plaintext_key_lingers_in_the_worktree` 当场变红——按模块本来的设计改为 DPAPI 密封
+（`secrets/sqlagent.deepseek_chat.dpapi`），明文已销毁。教训记下：这个仓库里 `.env` 只放非敏感字段。
+
+**最终数字**（deepseek-chat，89 题，$0.0936，`results/fin-deepseek-chat.jsonl`）：
+
+| 口径 | 可答题（n=74） | 说明 |
+|---|---|---|
+| 严格（主判分器，列集合须相等） | **21.6%** | 47 题失败里的大头是 `column_count_mismatch` |
+| 宽松（pred 的列**子集**对齐即可，同一容差） | **68.9%** | 差距几乎全是"附带上下文列"的输出习惯 |
+
+- **真实弱点**（宽松口径下仍错）：aggregation 25%（真算错，无列借口）；metric_lookup 29%
+  ——其中 10 题是**单位违规**（题面明说"亿元"，返回原始"元"，数值本身全对，真实取值错误 0）；
+  market 56%。最强：growth 100%、ratio 100%、screening 92%、topk 88%。
+- **拒答维度**：严格口径 6/15=40%；其余 9 题 `fabricated_result` 全部经答复文本分诊确认
+  **在散文里明示了缺失**（"there is no 2026-09-30 record… cannot be retrieved"），
+  返回的是证据形状的行（历史区间、验证计数、边界日期）——**把数字当答案提交的编造为 0**。
+  严格口径照旧不放松：它是预注册的量具，看了结果再放宽就是本项目从头批评的挑口径行为；
+  分诊逐例引文在 `results/fin-gap.jsonl` 的 answer_text 字段里，可复核。
+- 自检：`fin_gap.py` 对已存答案重算严格裁决，与存储判定 **0 分歧**；重判全程 $0。
+
+复现：`uv run python scripts/fin_eval.py --model deepseek-chat`（DPAPI 密封凭据，约 $0.09）→
+`uv run python scripts/fin_gap.py`。

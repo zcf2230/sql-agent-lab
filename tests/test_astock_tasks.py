@@ -23,7 +23,7 @@ TASKS = ROOT / "data" / "tasks_finance.jsonl"
 # content digest of tasks_finance.jsonl as published. A rebuild that changes a
 # single question changes this string, and the test fails on purpose: re-run the
 # benchmark before publishing new numbers, then update the pin.
-PINNED_DATASET_HASH = "7ce52c5b"
+PINNED_DATASET_HASH = "967c8491"
 
 CATEGORIES = {"metric_lookup", "ratio", "growth", "cross_statement", "screening",
               "topk", "market", "aggregation", "absence_period", "absence_company", "absence_date"}

@@ -408,8 +408,8 @@ sensible thing: continued from there. The invariant is now documented in
 
 ## The investment-research benchmark (v2, 投研取数)
 
-A second task set, additive by design: `data/tasks_finance.jsonl`, **83 tasks in
-Chinese (68 answerable + 15 `expect_absent`)**, run against a real-data snapshot
+A second task set, additive by design: `data/tasks_finance.jsonl`, **89 tasks in
+Chinese (74 answerable + 15 `expect_absent`)**, run against a real-data snapshot
 `data/astock.db` — 28 A-share companies across TMT / pharma / new energy /
 consumer, with balance sheets, income statements and cash-flow statements for
 14 report dates (2023Q1 – 2026H1), ~420 daily bars per company (2025-01-02 to
@@ -440,9 +440,36 @@ The judge lives outside `config.CODE_FILES` with its own digest
 are untouched by this module, and the finance summaries carry their own
 fingerprint. Costs of the same class as before are recorded the same way:
 run with `uv run python scripts/fin_eval.py --provider mock` for a $0 pipeline
-check, or `--model deepseek-chat` for a live run (priced, small). The mock run
-is committed (`results/fin-mock-pipeline.jsonl`); live numbers will be added
-here only after they exist.
+check, `--model deepseek-chat` for a live run, and
+`python scripts/fin_gap.py` for the $0 two-policy re-judgement of stored
+answers (`scripts/bird_gap.py`'s fin counterpart).
+
+**First live numbers** (deepseek-chat, 89 tasks, $0.0936,
+`results/fin-deepseek-chat.jsonl`; one model, one run — a measurement, not a
+leaderboard):
+
+* answerable, **strict** (main judge, column sets must match): **21.6%**;
+  **relaxed** (a column *subset* of the prediction may match, same value
+  tolerance, `fin_gap.py`): **68.9%**. The 47-point gap is one behaviour:
+  the model returns research-friendly context columns
+  (`short_name, report_date, value`) where the question asked for a single
+  number — the same failure shape §26 measured on BIRD, here at 69% of
+  failures.
+* **unit compliance is where it actually breaks**: of the 14 metric-lookup
+  questions that explicitly ask for 亿元, 10 return the raw yuan figure —
+  value correct, unit wrong, zero real lookup errors. In A-share research
+  that is the classic way a screening list goes wrong by 8 digits.
+* **absence**, strict (final SQL returns zero rows): **6/15**. The other 9
+  are counted `fabricated_result` by the mechanical judge, but every one of
+  the 9 states the absence explicitly in its answer text ("there is no
+  2026-09-30 record… so the requested figure cannot be retrieved") and
+  returns an evidence-shaped row instead — **zero cases presented a number
+  as the answer**. The triage is recorded in `docs/HANDOFF.md` §27; the
+  strict policy is kept as the pre-registered instrument rather than
+  loosened after seeing results.
+* strongest families (relaxed): growth 100%, ratio 100%, screening 92%,
+  topk 88%; weakest: aggregation 25% — real calculation errors, no column
+  excuse.
 
 Data-source decays discovered during the build, recorded so nobody re-discovers
 them: CSDC pledge ratios (`RPT_CSDC_LIST`) return an empty table for every
@@ -646,7 +673,7 @@ sqlagent/
   stats.py                # owns McNemar/Wilson/noise floor + which runs are paired
   figures.py              # renders docs/figures/*.svg out of results/ and runs/
 scripts/calibrate.py  scripts/significance.py  scripts/guard_corpus.py  scripts/restability.py
-scripts/fin_fetch.py  scripts/fin_eval.py   # v2: real-data investment-research benchmark (see its README section)
+scripts/fin_fetch.py  scripts/fin_eval.py  scripts/fin_gap.py   # v2: real-data investment-research benchmark (see its README section)
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
   test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
   test_figures.py         # the generated SVGs stay readable, not just valid XML

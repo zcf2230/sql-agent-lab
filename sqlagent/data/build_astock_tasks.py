@@ -79,6 +79,13 @@ def add(category: str, difficulty: str, question: str, gold_sql: str, *,
     if len(rows[0]) == 1 and rows[0][0] is None:
         dropped.append({"category": category, "question": question, "reason": "null_gold"})
         return
+    # a single-value gold that is exactly 0 is degenerate for the same reason
+    # COUNT(*)=0 was on the main set: it scores a guess, not a query. The v1
+    # pilot missed this because the guard checked the row count, and COUNT
+    # always returns one row - its zero sat inside the value.
+    if len(rows[0]) == 1 and rows[0][0] == 0:
+        dropped.append({"category": category, "question": question, "reason": "vacuous_zero"})
+        return
     tasks.append({"category": category, "difficulty": difficulty, "question": question,
                   "gold_sql": gold_sql, "expect_absent": False, "require_order": require_order,
                   "gold_tables": gold_tables or []})
@@ -156,11 +163,12 @@ for i, (nm, rd) in enumerate(_cross_pairs):
         f"WHERE i.code={company(nm)} AND i.report_date='{rd}'")
 
 # ------------------------------------------------------------------ screening
-_screen_defs = [
-    ("2025年年报", "2025-12-31"),
-    ("2025年半年报", "2025-06-30"),
-    ("2024年年报", "2024-12-31"),
-]
+SCREEN_DATES = ["2025-12-31", "2025-06-30", "2024-12-31"]
+# (v1 pilot bug, kept as a comment so it is not re-introduced: these were tuples
+# of (label, date) unpacked as `for rd, label`, which put the Chinese label into
+# the SQL and the raw date into the question - every COUNT gold silently
+# evaluated to 0 because report_date='2025年年报' matches nothing. Labels now come
+# from period_of() only, and a value-0 gold is dropped below.)
 # thresholds target a small hit list (2..8): read the live ratio distribution,
 # walk down from the top until the cut leaves a handful of names - a screening
 # question that returns half the universe is a list, not a screen
@@ -181,19 +189,19 @@ def _goodwill_thresholds(rd: str) -> list[float]:
             break
     return out
 
-for rd, _ in _screen_defs:
+for rd in SCREEN_DATES:
     for thr in _goodwill_thresholds(rd):
         add("screening", "hard",
             f"{period_of(rd)}商誉占归母净资产比例超过{thr}的公司有哪些？（返回公司简称）",
             f"SELECT c.short_name AS answer FROM balance_sheets b "
             f"JOIN companies c ON c.code=b.code WHERE b.report_date='{rd}' "
             f"AND b.total_parent_equity>0 AND b.goodwill/b.total_parent_equity > {thr}")
-for rd, label in _screen_defs:
+for rd in SCREEN_DATES:
     add("screening", "medium",
-        f"{label}经营活动现金流量净额为负的公司数量是多少？",
+        f"{period_of(rd)}经营活动现金流量净额为负的公司数量是多少？",
         f"SELECT COUNT(*) AS answer FROM cashflow_statements WHERE report_date='{rd}' AND op_cashflow<0")
     add("screening", "medium",
-        f"{label}归母净利润为负的公司数量是多少？",
+        f"{period_of(rd)}归母净利润为负的公司数量是多少？",
         f"SELECT COUNT(*) AS answer FROM income_statements WHERE report_date='{rd}' AND parent_net_profit<0")
 
 # ----------------------------------------------------------------------- topk
@@ -206,8 +214,25 @@ TOPK = [
 _topk_pairs = [(_names[(i * 3 + 2) % len(_names)], PERIODS[(i * 9 + 3) % len(PERIODS)]) for i in range(6)]
 for i, (nm, rd) in enumerate(_topk_pairs):
     label, col, table, _ = TOPK[i % len(TOPK)]
-    add("topk", "medium", f"{nm}{period_of(rd)}的{label}的值是多少亿元？",
-        f"SELECT {col}/100000000.0 AS answer FROM {table} WHERE code={company(nm)} AND report_date='{rd}'")
+    # within-company top-k over the four same-type periods of one year. The v1
+    # pilot phrased these as "…的{label}最高的值" - leftover template wording that
+    # reads as "the highest value" for a single company-period lookup, and the
+    # model was right to answer with the full period history instead.
+    year = rd[:4]
+    same_type = tuple(f"{year}-{m}" for m in PERIOD_LABELS)
+    top2 = _CONN.execute(
+        f"SELECT {col} FROM {table} WHERE code={company(nm)} "
+        f"AND report_date IN {same_type!r} AND {col} IS NOT NULL "
+        f"ORDER BY {col} DESC LIMIT 2").fetchall()
+    if len(top2) == 2 and top2[0][0] == top2[1][0]:
+        dropped.append({"category": "topk", "question": f"{nm} {year} {label}",
+                        "reason": "ambiguous_topk", "detail": "tied at LIMIT 1"})
+        continue
+    add("topk", "medium",
+        f"{nm}在{year}年的四个报告期中，{label}的报告期是哪一个？（返回该报告期日期 YYYY-MM-DD）",
+        f"SELECT report_date AS answer FROM {table} WHERE code={company(nm)} "
+        f"AND report_date IN {same_type!r} AND {col} IS NOT NULL "
+        f"ORDER BY {col} DESC LIMIT 1")
 for rd in ("2025-12-31", "2026-06-30"):
     add("topk", "medium",
         f"{period_of(rd)}归母净利润最高的公司简称是什么？",
