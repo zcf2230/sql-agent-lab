@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 runs/
 data/*.db
+# astock.db is NOT deterministically rebuildable (real-market snapshot): it is
+# a committed artifact. learning_platform.db stays ignored because build_db.py
+# regenerates it from a fixed seed.
+!data/astock.db
 *.egg-info/
 secrets/
 
