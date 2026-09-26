@@ -17,6 +17,11 @@ MUST_BLOCK = [
     "UPDATE users SET city = 'x'",
     "INSERT INTO users(id, name, email) VALUES (9999, 'x', 'x@y')",
     "CREATE TABLE pwned (id INTEGER)",
+    # The two shapes whose class names used to be in the write-node list without existing
+    # in sqlglot. They are blocked by the read-only root key, and now that the dead names
+    # are gone this is the only thing proving the shapes were never actually uncovered.
+    "ALTER TABLE users RENAME TO people",
+    "COPY INTO users FROM '/tmp/x.csv'",
     "SELECT 1; DROP TABLE users",
     "WITH d AS (DELETE FROM users RETURNING *) SELECT * FROM d",
     "SELECT * FROM sqlite_master",
@@ -212,3 +217,26 @@ def _passes(fn, sql: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def test_every_write_node_name_still_resolves_on_the_installed_sqlglot():
+    """Fifth review, F6: `safety._KNOWN_MISSING` was computed and read by nobody - a check
+    that reports a hole instead of closing one. Two of the names in the tuple (`AlterTable`,
+    `CopyInto`) turned out not to exist in sqlglot at all, so `WRITE_NODES` had been built
+    from 25 classes while the list advertised 27.
+
+    `WRITE_NODES` is built with `getattr(exp, name, None)` and **silently drops** anything a
+    future sqlglot renames: the guard would lose a write shape and every other test here
+    would stay green. So the names are pinned to resolve, and the count is pinned so a
+    rename cannot pass by trading one class for another. The assertion lives in a test
+    rather than raising at import time on purpose - an older install should fail a check,
+    not refuse to start."""
+    from sqlglot import exp
+
+    from sqlagent.safety import _WRITE_NODE_NAMES, WRITE_NODES
+
+    unresolved = [n for n in _WRITE_NODE_NAMES if getattr(exp, n, None) is None]
+    assert unresolved == [], f"sqlglot no longer models these write shapes: {unresolved}"
+    assert len(WRITE_NODES) == len(_WRITE_NODE_NAMES) == 25
+    for name, cls in zip(_WRITE_NODE_NAMES, WRITE_NODES):
+        assert getattr(exp, name) is cls, f"{name} no longer maps to the class the guard uses"

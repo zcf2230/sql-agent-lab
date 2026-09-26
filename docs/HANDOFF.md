@@ -154,6 +154,7 @@ uv venv --python 3.12 && VIRTUAL_ENV=.venv uv pip install -e ".[dev]"
 .venv/Scripts/python.exe scripts/significance.py    # p 值与噪声底，全部现算
 .venv/Scripts/python.exe -m sqlagent.figures        # 重画 README 三张图
 .venv/Scripts/python.exe scripts/guard_corpus.py    # 护栏双向测量（$0，不碰模型）
+.venv/Scripts/python.exe scripts/bird_gap.py             # 89%↔41.7% 的差距按列政策分解（$0，读已存答案，需 .external/dev）
 .venv/Scripts/python.exe scripts/restability.py --pick failures --analyse-only  # 重述稳定性·失败侧（$0，读已存结果）
 .venv/Scripts/python.exe scripts/restability.py --pick correct-representative --analyse-only  # 成功侧，含外推与 Wilson 区间
 git status --porcelain                       # 最后一步：应当【什么都不输出】
@@ -185,7 +186,7 @@ deepseek: 3-shot vs baseline              192  89.1%    93.2%  +4.2pp       88.8
   最大两两差异 4 题 = 2.1pp  ← baseline-v2 vs baseline-v3
 
 $ python -m sqlagent.adversarial --seed-tasks
-wrote 26 probes -> data\tasks_adversarial.jsonl
+wrote 123 probes -> data\tasks_adversarial.jsonl
 
 $ python -m sqlagent.figures                 # 只 clone、没有 runs/ ——也就是 §4.2 的场景
   trace.svg skipped: runs\openai__deepseek_chat__fs0.jsonl is not in git (runs/ is gitignored); see report.html for the replay
@@ -258,6 +259,7 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 单种问法的分数含措辞噪声（低估 1.30–2.08pp 是普查、高估 1.0–4.0pp 是 n=22 抽样；两侧同口径） | `results/restability-deepseek-chat-*.jsonl` 四组，各对应 `data/tasks_restability-*.jsonl`；同一份实现渲染在 `report.html` 第 3 节 | `python scripts/restability.py --pick failures --analyse-only`（$0，§17） |
 判分器在公开基准上仍然自洽，且公开 EX 有可量化的盲区 | `results/bird-judge.jsonl`（120 题 × 6 类注入，460 观测）；官方比较规则取自 `bird-bench/mini_dev` 的 `evaluation_ex.py:20`，其语义由 `tests/test_bird_judge.py` 钉住 | `python scripts/bird_judge.py`（$0，需先按脚本头注释下载 BIRD dev）；判分器改动是否影响已发表判定由 `python scripts/rejudge.py` 回答（$0），并且它现在是 CI 的一步：有翻转就红，不再是一次性测量 |
 自制基准的 89.1% 与公开基准的 41.7% 同时成立，且**低分不是判分器造成的** | `results/bird-agent.jsonl`（60 题逐题）+ `results/bird-agent-official.jsonl`（同一批答案在两套口径下的判定，0 分歧） | `python scripts/bird_tasks.py --dev-dir ../.external/dev --per-tier 20` 出题 → `python -m sqlagent.eval.runner --tasks data/tasks_bird-60.jsonl --db-root ../.external/dev --tag bird-agent`（$0.0753）→ `python scripts/bird_judge.py --answers results/bird-agent.jsonl`（$0） |
+89%↔41.7% 那道差距里，"多返回列"这一条政策值多少分——量过了，不是标签：放宽列集合相等 → 33/60 = 55.0%，翻回 8 题；27 题两种口径都错 | `results/bird-gap.jsonl`（逐题两口径判定 + 对齐路径）；§26 | `python scripts/bird_gap.py`（$0，不重新调模型）；`tests/test_docs_consistency.py::test_the_column_policy_decomposition_in_the_report_is_its_artifact` 钉住三处引用 |
 无效运行不出分 | `runner.py:132` | `tests/test_runner.py::test_a_run_that_crashes_is_not_reported_as_a_low_score` |
 
 ---
@@ -362,6 +364,9 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 | ✅ | 12 | 把 §21.4 记下的那个洞关掉：函数名也走白名单 | 记录归属是诚实，但洞本身没有理由留着——而且它属于"主防线管不到、恰好有东西兜底"那一类，正是这个项目从头批评的形状 | ¥0（192 + 1,534 条 gold 双向量过，0 误拒；`rejudge.py` 0 翻转） |
 | ✅ | 13 | 把 `rejudge.py` 变成 CI 门禁 + 给它第一条单测 | "改了判分器，公布数字动没动"这句话原本只由我本机的一次运行支撑；判分是纯函数，没理由不在每次 push 上强制。单测钉的是**范围判定**（208 题旧运行 out of scope、`require_order` 变化算数据集漂移、calib/bird 产物不参与）——那正是它第一版搞错、差点让我发布假结论的地方 | ¥0 |
 | ✅ | 14 | **因果检验 §20 的诊断**：22/35 失败是"多返回列"，那就只改一句 prompt 重跑同样 60 题（`python scripts/bird_hint.py --db-root ../.external/dev`） | 诊断不是证据；这一条把"我发现主因"变成"我验证了修复" | 实花 **$0.0706**（≈¥0.51）。第一次运行因为漏传 `--db-root` 而 60/60 失败、**$0**："数据库找不到就报错"和"harness 异常率过高就拒绝出分"两道闸门都按设计接住了它（§22） |
+| ✅ | 15 | **第五轮加分项①：把 89%↔41.7% 的差距按列政策拆开**（`python scripts/bird_gap.py`） | §20 那句"22/35 是多返回列"是判分器的出口标签，不是政策后果；这一条把"我发现主因"换成"我量了主因值多少分"，并当场暴露 14 题是**第二个缺陷**而不是列数问题（§26） | **$0**，读已存答案，不重新调模型 |
+| ☐ | 16 | 第五轮加分项②：修跨模型混淆（示例带完整工具轨迹，或 `tool_choice` 强制调用），两臂 × 两模型重跑 | 能把 README:529 那句"修法存在但没测"和文章第十节"仍未答"升级成有答案；也会牵动 `protocol_adherence` 列的读法 | 约 **¥5**（按 §8 已测单价：自制 192 题一轮 ≈¥1.2 × 两臂 × 两模型）。**待批** |
+| ☐ | 17 | 第五轮加分项③：`drop_distinct` 校准只有 6 题可承载。**不加自制题**，改为在 BIRD 那 120 道 human gold 上报"可承载题数" | 加题会改数据集摘要 → 全部已发表数字重跑重印，正好违反 CI 在守的"公布判定不许动"；外部语料上是同一句话的 $0 对照 | **$0**（`scripts/bird_judge.py` 已有该模式，只缺一个覆盖数） |
 | ☐ | 3 | 修 few-shot 混淆：示例改成完整工具轨迹，或 `tool_choice` 强制调用，重跑对比 | 让跨模型对比从"未答"变成"可答" | 约 ¥2.5 |
 | ☐ | 4 | 加一个更脏更大的 schema（200 表级）逼出自修复真实价值 | 让 §6-1 从"测不出"变成有结论 | 约 ¥2.5 |
 
@@ -416,6 +421,8 @@ $ python scripts/restability.py --pick correct-representative --analyse-only   #
 38 | 简历那句面试台词、§4.3 的结论句与审阅模板各写了一遍「按骨架聚合 p 在 **0.023**–0.227」，而实测下界是 **0.0391**；0.023 是**另一个统计量**（簇级 Wilcoxon 加连续性校正）的 p，在抄数字时被串进了这句话 | 三个载体同时错，其中一个是面试现场要照着说的话——被追问「0.023 哪来的」时我唯一能答的是「我抄错了」，而这恰好抹掉前面所有「我们只报现算数字」的可信度 | 三处改为 0.039–0.227；新增一条测试，把任何「p 在 X–Y 之间跨过 0.05」的句子与 `stats.cluster_sensitivity()` 的实测上下界对齐（在写 §19 那段简历措辞时撞出来的，与 BIRD 无关）
 39 | 给 `summarise()` 加了 `n_databases` / `db_root` 两个字段（只为 BIRD 那种多库题集服务），却没有重出那 6 个 mock 校准产物 | CI 的「产物必须逐字节重生成得出来」当场变红。**这次是检查赢了**：本地 pytest 不比对产物，所以这句话本来会一直成立到下一个克隆仓库的人手上——他会看到 `git diff` 不干净，而那正是 §4.2 承诺过的判据 | 照 CI 那串命令在本地重放，确认差异只是 `_summary` 里那两个键、逐题判定一行未动，再重出并提交（`5f8b099`）。教训的形状：改判分器要跑 `rejudge.py`，改 `summarise()` 要跑 `calibrate.py` 再 diff
 40 | 公开仓库里带着作者本机的绝对路径：`docs/DELIVERY.md` 的同步脚本、`docs/HANDOFF.md` 的交付包位置、`results/adversarial.jsonl` 里模型引用过的数据库文件名 | 泄露的不是密钥，是**机器账户名 + 工作区目录结构**；顺着文章里的账号就能把公开仓库和本机路径对上。更难看的是**没有任何检查在找它**，所以它一路绿灯推到了线上 | 三处改写成 `$HOME` / `%USERPROFILE%` / `<repo>`；`tests/test_secrets.py` 加 `HOME_PATH` 形状扫描，并双向验证：注入一条假路径必须失败、删掉必须通过。**已推送的历史里那几行仍然在**，取舍见 §24 |
+41 | 差距分解脚本第一版只按列名对齐，而生产判分器在列名无信息时会**退回按位置** | 打印出"宽松口径 28.3% < 严格口径 41.7%"——**一个放宽政策比原政策分低是不可能的**，如果我没把这条当成 bug 而是写成"意外发现"，§26 就是一篇错的文章。它差点被解释成"列名对齐本身在惩罚模型" | `strict` 为真直接短路为真（保证是超集）；出现"严格对、宽松错"立即 `SystemExit`，宁可不出数；两条对齐路径都试并各自记名（§26） |
+42 | 一个已在 §15★1 撤回的值（`2/192`）跟着 `docs/ARTICLE.md` 被**公开发布** | 撤回清单只扫中文 needle，而 README 是英文；同一句话换一种语言就绕过了整条防线。这次不是仓库内部两个数字互相矛盾，是**陌生读者看到的错误**，且只能靠重新编辑线上版本收回 | 撤回清单补英文写法与旧值三条；新增 `test_the_noise_floor_prose_matches_the_baselines_stats_declares` 把三处跨度钉到 `stats.noise_floor()`；§14 发布清单加"公开之后被撤回的数字要在线上复核"这条（§25 教训 2） |
 **共同点**：这一节里的错误绝大多数不会导致崩溃，只会**产出一个看起来合理的错误数字**
 （或让一个本该能核对的产物变得无法核对）。这正是本项目全部设计针对的失效模式。
 行数与"共几个"都不写在这里——每加一行就要回来改一次，而这一节恰恰是本项目改不及时
@@ -595,7 +602,8 @@ git rev-list --objects --all \
 
 ### 14.5 发布**不改变**的三条底线（面试会拿这些试探你）
 
-- 公开 README/HANDOFF 已写明：自修复无增益、跨模型对比被混淆、安全只有 26 条探测——
+- 公开 README/HANDOFF 已写明：自修复无增益、跨模型对比被混淆、安全探测扩到 123 条之后
+  上界仍然只有 11%（写形状那 11 次单独算只到 24%）——
   **发布后这三条继续留在"未证明"，不要因为上了公开仓库就改口**。
 - 数字来自代码不来自本文：任何一处图/表/散文与 `scripts/significance.py`、
   `scripts/calibrate.py` 现算输出不一致，以脚本为准，并当成 bug 提 issue。
@@ -1400,3 +1408,68 @@ accuracy, which is still far from the human result of 92.96%"）。
 确认线上没问题之后应当直接删掉（见 §13 末尾同样的提醒）。
 
 
+## 25. 第五轮外部审阅（2026-09-26，`docs/REVIEW_2026-09-26_R5.md`）· 逐条回应
+
+这一轮的性质和前四轮不同：必改三条里有两条是**前几轮已经修过的东西在别的载体上复发**，
+而第四条（git 半成品）现象成立、定位错了。逐条给结论、证据和"不认的理由"。
+
+| # | 审阅结论 | 复现结果 | 处置 |
+|---|---|---|---|
+| ★1 | README 安全表与同节散文互相打架 | **成立，且是这一轮最重的一条。** README 的表是 26 条探测的旧表（total 26 / attempted 6 / claimed 0），而它上面那句写 123 probes、下面那句写 98 of 123（= 25 次尝试）。产物实测：`n=123 / attempted=25 / agent_fail=27 / guard_caught=26 / executed=0 / claimed=2`。带 total 行的表读起来像全表，所以只读表的人和只读散文的人拿到的是两个项目 | 整节按产物重建为 123 全表 + 诱导强度表；rule-of-three 从 0/6→39% 改为 **0/25→11%**，并补写形状单独的 **0/11→24%**；`uncaught_agent_fail = 2` 明确成"护栏唯一没功劳的两格是说谎形状，不是绕过"。**并且加测试**：`test_the_readme_security_table_is_the_adversarial_artifact_it_claims` 逐格比对表与 `_summary`，`test_the_quoted_probe_seed_output_is_what_the_command_prints` 把 §4.2 那句 `wrote 26 probes`（也是转写漂移）钉到 `len(probes())`。双向验证过：把旧 total 行塞回去，测试当场红 |
+| ★2 | 噪声底散文与实现脱节 | **成立，而且比审阅说的更糟。** README 写 "Four … six pairwise"，`stats.BASELINES` 是 3 份 / 3 对（实测 4/3/1 题 = 2.1/1.6/0.5pp）。撤回清单里**已经有**"四份同配置基线"这条中文 needle——它没抓住 README，因为 **README 是英文写的**：一个只会中文的撤回检查只保护一半载体。同一轮还在**已公开发表的文章**里抓到 `2/192 道题的判定翻了（1.0%）`——那是 §15★1 两轮前就撤回的乐观值 | README 改为 3 份 / 3 对 / 1–4 题；ARTICLE §七 改为实测跨度；`WITHDRAWN` 补三条英文与旧值 needle；新增 `test_the_noise_floor_prose_matches_the_baselines_stats_declares`，把 README/ARTICLE/HANDOFF 三处跨度全部钉到 `stats.noise_floor()`。注入 `six pairwise` 后测试当场红 |
+| ★3 | Git 状态是半成品（master、无 origin/main、7 个文件未提交） | **现象成立，定位不是主仓库。** `sql-agent-lab/` 在 `main`、`origin/main = 0e0d00f`、工作树干净；被看到的是**桌面交付副本** `Desktop\sql-agent-lab` —— 它有自己的 `.git`（分支 `master`、无 remote），我按 `git ls-files` 镜像之后那 7 个文件在包里显示未提交 | 在包里提交，交付副本的 `git status` 必须干净：审阅者双击进来的就是这个副本，它显示"半成品"和主仓库干净是两件事，而**读的人分不清**。另外登记：文章已公开并把读者引进仓库，所以"本地已修"在推送之前对外不成立 |
+| 加分① | 89%↔41.7% 的差距没拆过，按宽松列口径重判是 $0 的事 | **接受，并且当场做完了。** 见 §26：41.7% → 55.0%，放宽这一条翻回 8/60 题；更值钱的是那 14 题被 strict 判成列数问题、丢掉多余列之后仍然不等 | 已并入 `report.html` §5 与 `results/bird-gap.jsonl` |
+| 加分② | 跨模型混淆的修法"存在但没测"（README:529） | **接受，但要花钱，未批。** `tool_choice` 强制或示例带完整工具轨迹都要重跑两臂 ×2 模型；按 §8 已测单价估自制 192 题一轮约 ¥1.2，两臂两模型约 ¥5。它会把"结论为未答"升级成有答案，也会牵动 `protocol_adherence` 那一列的读法 | 留在 §8 待办，标"待批"。不做的代价我也写清：文章第十节现在承诺的就是"仍未答"，不做不产生矛盾 |
+| 加分③ | `drop_distinct` 校准只有 6 题可承载，去 `build_tasks` 加 fan-out 题族 | **方向接受，代价审阅没算。** 加题会改数据集摘要 → 缓存全废 → 自制集所有已发表数字（89.06% / 93.23% / p=0.0574 / 噪声底跨度）全部重跑重印，文章与简历的头条数字跟着改，约 ¥5–6 且**已公布数字必须变动**，这正好违反本项目自己 CI 在守的那条"公布过的判定不许动" | 提出 $0 替代：在 **BIRD 那 120 道 human gold** 上量同一类注入能承载多少题（`scripts/bird_judge.py` 已有 `drop_distinct` 模式，只是没报"可承载题数"）。这样"最薄的格子"有外部对照，而不动自制基准 |
+| 加分④ | `n_no_sql_executed` 只在散文里披露，report.py 没渲染列 | **不成立。** `runner.py:220` 计算它，`report.py:725` 把它渲染成表列，`report.py:847` 在 Qwen 那一节写"147/192 题最终 SQL 从未执行"，并由 `tests/test_report.py:145-147` 双向钉住（值 + 出现在 HTML 里）。第五轮 F6 修的就是这条 | 不改代码，改审阅意见：这一条在上一轮已经闭环，且闭环方式是"渲染 + 测试"而不是散文 |
+| 加分⑤ | `safety.py:35 _KNOWN_MISSING` 是死变量 | **成立，而且比"死变量"严重。** 它算出来是 `['AlterTable', 'CopyInto']`——**这两个类在 sqlglot 里根本不存在**，所以 `WRITE_NODES` 一直是用 25 个类构建的，而名字表宣称 27 个；更要紧的是**没有任何测试覆盖 `ALTER TABLE …` 和 `COPY INTO …` 这两种形状**（`test_safety.py` 里 grep 不到 alter/copy） | 删掉 `_KNOWN_MISSING` 与两个不存在的名字，把两种形状作为 `MUST_BLOCK` 用例补上（实测都被根节点白名单拦住：`Alter` / `Copy`），并加 `test_every_write_node_name_still_resolves_on_the_installed_sqlglot`：将来 sqlglot 改名会让 `WRITE_NODES` 静默少一类、其余测试全绿，这条测试就是为那个时刻留的。另外这次改动会动代码摘要 → 6 个 mock 校准产物的 `_summary.config_hash` 必须一起重出（§9 第 39 条的同一条因果，这回是**按设计**发生：逐题判定一行未动，`rejudge.py` 实测 0 翻转） |
+| 叙事1 | RESUME 版本A 的 BIRD 段一条塞 12 个数字，不可读 | **成立，而且不止是密度问题：那条 bullet 的句子是断的**——"真正的收益是…；修完用" 后面直接接上了 agent-on-BIRD 的句子，`scripts/rejudge.py` 那半句掉到下一行。密度问题背后是一次粘贴事故 | 拆成两条 bullet，只留 41.7% / 89.1% / p=0.0156 与"0 分歧""修好 7 弄坏 0"；Wilson 区间、47.4pp、$0.0753+$0.0706、22/35 全部退回 HANDOFF 与报告。同时**改掉逼着简历堆数字的根因**：`test_the_agent_bird_numbers…` 原本要求每个载体都含全套 needle，现改为证据文档要求齐、简历只要求头条两数正确 |
+| 叙事2 | 版本B 定位行 "Python · … · Python ·" 重复 | 成立 | 删重复 |
+| 叙事3 | "The three numbers that matter" 下面是 4 张图 | 成立，且更乱：3 个小节、4 张图、0 个"数" | 标题改 "Three things you can check without trusting me"，正文 "All four figures" 保留（它是对的） |
+| 叙事4 | rule-of-three 是黑话 | 接受。简历里本来就不出现；`INTERVIEW.md` Q22 补一句人话版："**一次都没失守，不等于失守率是 0——25 次全对，最坏情况也就压在 11% 上下**" | 已加 |
+
+**这一轮真正的教训不是任何单条数字**，而是两条结构性事实：
+
+1. **撤回清单只说一种语言。** 同一句被撤回的话，中文载体守住了、英文载体漏了。
+   needle 列表必须按"这句话有几种写法"来维护，而不是按"我改过哪一处"。
+2. **修好一处不等于修好全部，而"已发表"的载体里最危险的是已经公开的那一份。**
+   `2/192` 这个值在 §15★1 就被撤回过，却跟着 `docs/ARTICLE.md` 在**今天**发到了公开站上——
+   从"仓库里的旧值"变成"陌生读者看到的错误"只隔了一次发布。
+   所以 §14 发布清单要加一条：文章/简历公开之后，任何被撤回的数字都必须
+   在线上版本复核一遍，而不只是在仓库里 grep。
+
+
+## 26. 那道差距第一次被拆开量：列政策解释 8/60 题（2026-09-26，$0）
+
+第五轮加分项问的是同一件事：§20 写"35 次失败里 22 次是多返回列"，但那是**判分器的出口标签**，
+不是"放宽这条能拿回多少"。出口标签和政策后果不是一回事——一个说模型死在哪一步，
+一个说改这一步值多少分。所以用已存的 60 条答案重判一遍：
+
+| 口径 | 规则 | pass@1 |
+|---|---|---|
+| 本项目口径 | gold 的列集合必须与预测**完全相等**，多一列元组就不等 | **25/60 = 41.7%** |
+| 对照口径 | gold 要的列必须都在，**多出来的列丢掉再比**；其余政策一字不动（1e-4 容差、多重集、重复行仍判错、`require_order` 沿用题面） | **33/60 = 55.0%** |
+
+放宽这一条翻过来 **8 题 = 13.3pp**。剩下 **27 题在两种口径下都错**，
+出口原因分布：`column_count_mismatch` 14 题、`value_mismatch` 11 题、`row_count_mismatch` 2 题。
+
+**这张表最值钱的是那 14 题**：它们被严格口径判成"列数不对"，
+可把多出来的列丢掉之后**仍然不等**——也就是说"多返回列"对它们是**同时存在的第二个缺陷**，
+不是原因。§20 与 `report.html` 第 5 节原来那句"主因是多返回列"因此改成
+"最常见的失败形状是多返回列，它是不是主因量过了"。
+而 §22 那句 prompt 修复消掉的是 22 个列数错误里的 9 个——两件事量的是不同的东西，
+**不能相加**：一个改判分，一个改模型行为。
+
+**这个 55.0% 不是成绩，是对照。** 本项目接受的口径仍然是列集合必须相等：
+题面问"名字和类型"，答案附带主键就是另一个答案，而且是最容易被 JOIN 扇出污染的那一类。
+把它当成绩报，就是这篇文章从头到尾在批评的挑口径行为。
+
+**踩到的一次自伤**（§9 第 41 条）：第一版脚本只按列名对齐，而生产判分器在列名无信息时
+**退回按位置**，于是 8 条本来判对的题被这个"宽松"口径判错，打印出 28.3% < 41.7%。
+**一个放宽政策比原政策分低是不可能的——不可能的数字是 bug，不是发现。**
+现在 `strict` 为真直接短路为真（保证是超集），并且一旦出现"严格对、宽松错"就 `SystemExit`，
+宁可不出数也不出一个不可能的数。
+
+复现：`python scripts/bird_gap.py`（$0，需要 `.external/dev`，**不进 CI**——
+346 MB 第三方下载不该进构建，与 `scripts/bird_judge.py` 同一条理由）。
+产物 `results/bird-gap.jsonl`（逐题两口径判定 + 走的是哪条对齐路径）。

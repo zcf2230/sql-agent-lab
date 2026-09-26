@@ -404,9 +404,35 @@ def agent_on_bird_html() -> str:
                 f"<br>对照 §2 那个自制基准上的 +4.2pp（p=0.0574，<b>未</b>达显著）："
                 f"同一套检验，一个跨线一个没跨，两个都印在这里。它消掉的是 22 个列数错误里的 9 个，"
                 f"所以这是\"主因之一被证实\"，不是\"89%↔42% 的差距被解释完\"。文字版 HANDOFF §22。</div>")
+    gap = read_jsonl(RESULTS / "bird-gap.jsonl")
+    gap_html = ""
+    if gap:
+        g = gap[0].get("_summary") or {}
+        gn = g.get("n") or 0
+        if gn:
+            lenient_p1 = g.get("lenient_pass", 0) / gn
+            closed = g.get("closed_by_relaxing_columns", 0)
+            still = g.get("still_wrong", 0)
+            # named before the f-string: this page must not crash on a nested quote
+            residual = "、".join(f"{k} {v} 题" for k, v in
+                                 sorted((g.get("still_wrong_reasons") or {}).items(),
+                                        key=lambda kv: -kv[1]))
+            gap_html = (
+                f"<div class=\"note\"><b>那道差距第一次被拆开量（$0，不重新调模型）。</b>"
+                f"同一批 {gn} 条答案，只放宽\"多返回的列\"这一条——gold 要的列必须都在，"
+                f"多出来的列丢掉之后再比，其余政策一字不动："
+                f"pass@1 {agent_p1:.1%} → <b>{lenient_p1:.1%}</b>，翻过来 <b>{closed} 题</b>。"
+                f"<br>所以 {closed / gn * 100:.1f}pp 是这一条严格政策造成的，"
+                f"剩下 <b>{still} 题在两种口径下都错</b>（{residual}）。"
+                f"\"多返回列是主因之一\"这句话，现在是量出来的而不是推出来的。<br>"
+                f"边界：这是<b>用来分解差距的对照政策，不是本项目接受的口径</b>——JOIN 把主键一起"
+                f"带出来，按题面就是另一个答案；它也不能与上面那句 prompt 修复相加，"
+                f"一个改判分、一个改模型行为。跑法 <code>python scripts/bird_gap.py</code>，"
+                f"产物 <code>results/bird-gap.jsonl</code>，文字版 HANDOFF §26。</div>")
     return f"""
  <h3>同一个 agent、同一份配置，搬到 BIRD 上</h3>
  {hint_html}
+ {gap_html}
  <table><thead><tr><th>题集</th><th class=num>题</th><th class=num>pass@1</th><th>这套题是谁出的</th></tr></thead><tbody>
   <tr><td>自制基准（baseline，无示例）</td><td class='num'>{base.get('n_tasks', 0)}</td>
       <td class='num'>{base_p1:.1%}</td><td>我造的题、我写的 gold</td></tr>
@@ -422,7 +448,8 @@ def agent_on_bird_html() -> str:
    没有这一步，"我在 BIRD 上 {agent_p1:.0%}" 和 "我的判分器搬到真实数据又坏了" 是同一句话——
    而本节上面刚记录过它确实在真实数据上坏过两次。</div>
  <div class="note"><b>失败结构（{n - mine} 题）：</b>{tax_txt}。<br>
-   主因是<b>多返回了列</b>：题问名字和类型，模型把 id 一起带上。这和上面的注入结果合起来才完整——
+   最常见的失败形状是<b>多返回了列</b>：题问名字和类型，模型把 id 一起带上。它算不算主因，
+   上面那段用对照政策量过了，不靠这里推断。这和上面的注入结果合起来才完整——
    公开口径对<b>重复行</b>盲目，但对<b>多出的列</b>严格（元组一变长就不等）。
    所以"官方更宽松"必须限定到具体缺陷类上，不能当总判断。<br>
    <b>本轮真实花费 ${a.get('total_cost_usd', 0):.4f}</b>（{n} 题、平均 {a.get('avg_llm_steps', 0)} 步/题，

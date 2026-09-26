@@ -22,9 +22,15 @@ _READ_ROOT_KEYS = {"select", "union", "intersect", "except", "values"}
 # UPDATE and INSERT forms. Nothing harmful happened - the connection is `mode=ro`
 # and SQLite rejects DML-in-CTE at parse time - but that is defence in depth
 # covering a hole in the layer that advertised itself as the check.
+# `AlterTable` and `CopyInto` used to be in here and are not: sqlglot has no such classes,
+# so both were silently dropped by the `getattr` below and the only thing they ever produced
+# was a `_KNOWN_MISSING` list nobody read. The shapes they were meant to catch are real and
+# still blocked - `ALTER TABLE ...` parses as `Alter`, `COPY INTO ...` as `Copy` - and
+# `tests/test_safety.py` now carries those two statements as cases, which is where the
+# coverage actually lives.
 _WRITE_NODE_NAMES = (
     "Insert", "Update", "Delete", "Drop", "DropPartition", "Create", "Alter",
-    "AlterTable", "TruncateTable", "Merge", "Copy", "CopyInto", "Grant", "Revoke",
+    "TruncateTable", "Merge", "Copy", "Grant", "Revoke",
     "Command", "Pragma", "Attach", "Detach", "Refresh", "Set", "Transaction",
     "Commit", "Rollback", "UsingData", "Returning", "Into", "Export",
 )
@@ -32,7 +38,6 @@ WRITE_NODES: tuple[type, ...] = tuple(
     t for t in (getattr(exp, name, None) for name in _WRITE_NODE_NAMES)
     if isinstance(t, type) and issubclass(t, exp.Expression)
 )
-_KNOWN_MISSING = [n for n in _WRITE_NODE_NAMES if getattr(exp, n, None) is None]
 
 # Functions the parser can model are SQL's own vocabulary. Anything it cannot model comes
 # back as `Anonymous` - an arbitrary name the *engine* resolves at run time - and that is
