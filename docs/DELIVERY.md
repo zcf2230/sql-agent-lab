@@ -82,8 +82,9 @@ git status --porcelain                            # 最后一步：应当【什�
 不是"自上次以来改动的那几个"——只复制改动清单，就查不出包里有文件被漏掉或多余：
 
 ```bash
-SRC=/c/Users/34264/Documents/Qoder/2026-09-21/4a73de0a/sql-agent-lab
-DST=/c/Users/34264/Desktop/sql-agent-lab
+# 把 SRC 换成你本地的仓库目录；不要把自己的绝对路径写进这份文档（它会进公开仓库）
+SRC="$HOME/Documents/Qoder/<workspace>/sql-agent-lab"
+DST="$HOME/Desktop/sql-agent-lab"
 
 # 1) 镜像：按原相对路径逐个复制（`cp 文件 目录/` 只取文件名，会把它丢到根目录）
 cd "$SRC" && git ls-files -z | while IFS= read -r -d '' f; do

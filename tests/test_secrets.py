@@ -89,6 +89,50 @@ def test_the_scanner_actually_fire():
     assert not KEY_SHAPE.search("SQLAGENT_API_KEY=sk-...")
 
 
+# A home-directory path is not a credential, but publishing one names the machine account
+# and the workspace layout. Written as a shape rather than this machine's path so the same
+# assertion means something on the CI runner too. The {1,2} separator is for stored JSONL,
+# where the text carries an escaped backslash pair, versus one in a shell snippet.
+HOME_PATH = re.compile(r"(?i)(?:[A-Za-z]:[\\/]{1,2}Users[\\/]|/home/[A-Za-z0-9._-]+/|/Users/[A-Za-z0-9._-]+/)")
+
+# Assembled, not written out: a literal example in this file would be caught by the scan
+# below, and the first two versions of this test failed on exactly that.
+_S = "/"
+_WIN = "C:" + "\\" + "Users" + "\\"
+_ESC = "C:" + "\\\\" + "Users" + "\\\\"
+_POSIX = _S + "home" + _S + "someone" + _S + "repo"
+_MSYS = _S + "c" + _S + "Users" + _S + "someone" + _S + "repo"
+
+
+def test_the_home_path_scanner_fires_and_stays_quiet_on_prose():
+    assert HOME_PATH.search(_WIN + "someone" + "\\" + "repo")
+    assert HOME_PATH.search('"note": "at ' + _ESC + "someone" + "\\" + "repo" + "\\" + 'data.db"')
+    assert HOME_PATH.search(_POSIX)
+    assert HOME_PATH.search(_MSYS), "the MSYS spelling must fire too"
+    assert HOME_PATH.search("uv pip install -e .[dev]") is None
+
+
+def test_no_published_file_names_a_local_home_path():
+    """Walks the work tree rather than `git ls-files` on purpose: the first version shelled
+    out to git, and on a machine where `git` is not on PATH that raised FileNotFoundError in
+    some runs and passed vacuously in others. `runs/` is excluded because it holds local
+    traces whose job is to name the files they read; it is not committed and not mirrored."""
+    offenders = []
+    for path in secrets.ROOT.rglob("*"):
+        if not path.is_file() or path.suffix in {".pyc", ".db", ".dpapi"}:
+            continue
+        if {".git", ".venv", "__pycache__", "runs"} & set(path.parts):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hit = HOME_PATH.search(text)
+        if hit:
+            offenders.append(f"{path.relative_to(secrets.ROOT)}: {hit.group(0)!r}")
+    assert not offenders, f"files containing a local home path: {offenders}"
+
+
 @pytest.mark.skipif(os.name != "nt", reason="DPAPI is Windows-only")
 def test_sealing_only_removes_the_key_line(tmp_path, monkeypatch):
     """Regression: sealing used to rewrite .env from a template naming one model.
