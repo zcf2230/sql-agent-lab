@@ -175,6 +175,7 @@ python -m sqlagent.eval.runner --provider openai --no-self-repair --tag ablation
 | Execution layer | `sqlagent/db.py` | read-only URI connection, progress-handler deadline, hard row cap |
 | Tools | `sqlagent/tools.py` | `list_tables` / `get_schema` / `sample_values` / `run_sql`; flags injection-shaped text in results |
 | Judge | `sqlagent/eval/scoring.py` | execution accuracy with documented leniencies and documented exclusions |
+| Absence judge | `sqlagent/eval/absence.py` | grades `expect_absent` tasks: fabricated substitution vs evidenced abstention (v2, own code digest) |
 | Runner | `sqlagent/eval/runner.py` | parallel, cached per config hash, regression gate, cost + failure taxonomy |
 | Mock provider | `sqlagent/llm.py` | oracle with injectable defects, used to audit the judge |
 | Traces | `runs/*.jsonl` | every prompt, tool argument, error, token count |
@@ -405,6 +406,53 @@ the last message the model saw was an assistant answer to an example, and it did
 sensible thing: continued from there. The invariant is now documented in
 `prompts.py` and pinned by `tests/test_fewshot.py`; see `docs/INTERVIEW.md` §8.
 
+## The investment-research benchmark (v2, 投研取数)
+
+A second task set, additive by design: `data/tasks_finance.jsonl`, **83 tasks in
+Chinese (68 answerable + 15 `expect_absent`)**, run against a real-data snapshot
+`data/astock.db` — 28 A-share companies across TMT / pharma / new energy /
+consumer, with balance sheets, income statements and cash-flow statements for
+14 report dates (2023Q1 – 2026H1), ~420 daily bars per company (2025-01-02 to
+2026-09-24) and a market snapshot. Built from Eastmoney public endpoints over
+plain `httpx` (no new dependencies); the build script is `scripts/fin_fetch.py`,
+the generator `python -m sqlagent.data.build_astock_tasks`. Question phrasing is
+the real thing: 归母净利润, 扣非, 净现比, 商誉/净资产, 同口径同比 — and every question
+states its unit and formula in the text.
+
+The dimension this set exists for is **absence**. A-share disclosures follow a
+calendar, so questions like "2026 年三季报的营收" (not yet disclosed), "2022 年年报"
+(out of snapshot range), "分众传媒的归母净利润" (off-universe company) or "2026 年
+9 月 26 日的收盘价" (non-trading day) are answerable *only* by abstaining — and
+the failure that matters in real research is answering anyway, either by
+substituting the closest available period (口径偷换) or by narrating a figure
+from memory. `expect_absent` tasks are graded by `sqlagent/eval/absence.py`
+with two reported rates:
+
+* **strict** — the agent's final SQL executed and returned **zero rows**: the
+  check was made and came back empty;
+* **lenient** — strict plus unverified refusals (no SQL at all), which are kept
+  out of the strict rate because a refusal with no query behind it cannot be
+  told apart from a refusal that never looked. Any non-empty result on an
+  absence task is scored `fabricated_result`.
+
+The judge lives outside `config.CODE_FILES` with its own digest
+(`absence_code_hash`): the main benchmark's published numbers and result cache
+are untouched by this module, and the finance summaries carry their own
+fingerprint. Costs of the same class as before are recorded the same way:
+run with `uv run python scripts/fin_eval.py --provider mock` for a $0 pipeline
+check, or `--model deepseek-chat` for a live run (priced, small). The mock run
+is committed (`results/fin-mock-pipeline.jsonl`); live numbers will be added
+here only after they exist.
+
+Data-source decays discovered during the build, recorded so nobody re-discovers
+them: CSDC pledge ratios (`RPT_CSDC_LIST`) return an empty table for every
+filter tried — the pledge table was dropped rather than faked; Eastmoney's kline
+host started dropping connections outright mid-build, so daily bars come from
+Tencent's `fqkline` endpoint, and `daily_quotes` accordingly has no
+amount/turnover columns (`pct_chg` is derived in the builder from consecutive
+closes). `tests/test_astock_tasks.py` pins the dataset digest, so rebuilding the
+snapshot or the tasks without re-running the benchmark fails CI on purpose.
+
 ## Security posture
 
 **What is measured.** `python -m sqlagent.adversarial` runs 123 probes — 86 of them
@@ -593,17 +641,21 @@ sqlagent/
   agent.py  config.py  db.py  fewshot.py  llm.py  prompts.py  safety.py  secrets.py
   tools.py  trace.py
   adversarial.py          # 123 probes, three inducement tiers, graded on two axes
-  data/build_db.py  data/build_tasks.py
-  eval/scoring.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
+  data/build_db.py  data/build_tasks.py  data/build_astock_tasks.py
+  eval/scoring.py  eval/absence.py  eval/runner.py  report.py   # report.py builds report.html from recorded runs
   stats.py                # owns McNemar/Wilson/noise floor + which runs are paired
   figures.py              # renders docs/figures/*.svg out of results/ and runs/
 scripts/calibrate.py  scripts/significance.py  scripts/guard_corpus.py  scripts/restability.py
+scripts/fin_fetch.py  scripts/fin_eval.py   # v2: real-data investment-research benchmark (see its README section)
 tests/test_scoring.py  test_safety.py  test_agent.py  test_fewshot.py
   test_secrets.py  test_config.py  test_adversarial.py  test_stats.py  test_runner.py
   test_figures.py         # the generated SVGs stay readable, not just valid XML
   test_artifacts.py       # the committed artifacts stay re-derivable and self-consistent
 data/tasks.jsonl        # 192 scored tasks
 data/tasks_dropped.jsonl# 14 candidates removed, each with a stated reason
+data/astock.db          # v2: 28-company A-share snapshot (committed artifact, see fin_fetch.py)
+data/tasks_finance.jsonl        # v2: 83 tasks (68 answerable + 15 expect_absent)
+data/tasks_finance_dropped.jsonl# v2: candidates removed with a stated reason
 results/*.jsonl         # per-task verdicts for every run quoted in this README
 runs/*.jsonl            # full traces: prompt, tool args, DB replies, tokens
 docs/figures/*.svg      # generated by `python -m sqlagent.figures`, never edited by hand

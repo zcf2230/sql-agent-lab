@@ -126,6 +126,23 @@
 
 ---
 
+## v2 · 投研取数基准（2026-09-26 新增：以下是数据集事实，模型分数未跑出前不进简历正文）
+
+> **可复现的数据集事实**（`tests/test_astock_tasks.py` 全部钉死）：
+>
+> - 增量模块：真实数据投研取数基准——28 家 A 股公司快照（东财公开接口构建，纯 httpx 零新依赖），
+>   三大报表 ×14 个报告期（2023Q1–2026H1）+ 约 420 个交易日行情 + 市值/PE 快照；
+>   **83 道中文题面**（归母净利润、扣非、净现比、商誉/净资产、同口径同比……），68 可答 + 15 拒答
+> - 独有的**数据缺失拒答维度**：未披露报告期 / 库外期间 / universe 外公司 / 非交易日四族题，
+>   正确行为是查证后拒答；任何非空结果判 `fabricated_result`——"拿最近一期顶上"的口径偷换
+>   在这个基准里是被量化的失败，不是靠 prompt 祈祷不掉的坑
+> - 判分器在独立文件、带独立代码指纹：主基准 192 题的全部已发布数字与缓存**未受影响**
+> - mock 全流程 83/83、$0（`results/fin-mock-pipeline.jsonl`，证明管道与判分器，不证明模型）；
+>   live 跑分：`uv run python scripts/fin_eval.py --model deepseek-chat`
+>   （估约 250 次调用、主基准成本量级的零头；跑完后把严格/宽松拒答率与 pass@1 写进此处）
+
+---
+
 ## 两版共用的三条底线
 
 1. **项目定位行按岗位切换**，同一份代码两套卖点，不冲突。
@@ -155,6 +172,7 @@
 .venv/Scripts/python.exe -m pytest             # 全绿（计数不写进正文）
 .venv/Scripts/python.exe scripts/calibrate.py  # OVERALL 750 / 0 / 0
 .venv/Scripts/python.exe scripts/rejudge.py    # 改了判分器，已发表判定动没动：0 翻转（$0）
+.venv/Scripts/python.exe scripts/fin_eval.py --provider mock   # v2 投研基准管道检查（$0）
 # 简历上每个数字都能在 results/ 或 docs/HANDOFF.md §5 的映射表里找到出处
 # 若面试要现场报工程量，跑这两条现算，不要背：
 find . -name '*.py' -not -path './.venv/*' -not -path './.git/*' | xargs wc -l | tail -1

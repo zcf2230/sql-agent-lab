@@ -1483,3 +1483,36 @@ accuracy, which is still far from the human result of 92.96%"）。
 复现：`python scripts/bird_gap.py`（$0，需要 `.external/dev`，**不进 CI**——
 346 MB 第三方下载不该进构建，与 `scripts/bird_judge.py` 同一条理由）。
 产物 `results/bird-gap.jsonl`（逐题两口径判定 + 走的是哪条对齐路径）。
+
+## 27. v2：投研取数基准（2026-09-26，增量模块，未动主基准）
+
+新增第二个任务集 `data/tasks_finance.jsonl`：**83 题，中文题面（68 可答 + 15 `expect_absent`）**，
+跑在真实数据快照 `data/astock.db` 上（28 家 A 股、三表 14 个报告期 2023Q1–2026H1、
+2025-01-02 至 2026-09-24 的日线、市值/PE 快照）。构建链：`scripts/fin_fetch.py`（东财公开接口 +
+腾讯 K 线，纯 httpx，**未新增任何依赖**）→ `python -m sqlagent.data.build_astock_tasks`。
+
+**给审阅者的关键事实：**
+
+- **主基准一字未动。** 新判分器 `sqlagent/eval/absence.py` 刻意不在 `config.CODE_FILES`
+  里，`config_hash()` 不受影响，既有结果缓存与全部已发布数字继续有效；财务摘要自带
+  `absence_code_hash()` 指纹（覆盖 absence.py + fin_eval.py）。
+- **本模块的卖点是一个维度，不是一堆题：数据缺失拒答。** A 股披露有日历，"2026 年三季报"
+  （未披露）、"2022 年年报"（库外）、"分众传媒"（universe 外）、"2026-09-26 收盘价"（非交易日）
+  四族题的正确行为是查证后拒答；错误行为是口径偷换（拿最近一期顶上）或凭记忆编数。
+  判分语义：pred 执行成功且 0 行 = `abstain_evidenced`（严格口径记对）；非空结果 =
+  `fabricated_result`（记错，**这正是要抓的**）；执行报错 = 记错；无 SQL = `no_sql_produced`
+  （严格口径记错 + `abstain_lenient` 标记，宽松口径单列一个 rate，不混入、不隐藏）。
+  已接受的弱点与主判分器同族：`WHERE 1=0` 能骗过 0 行判据——`tests/test_absence_scoring.py`
+  把它钉成"文档化的性质"，不是等审阅者发现的 bug。
+- **防自欺的纪律照旧**：出题器值池全部从库里读；单值 gold 为 NULL 一律丢弃（商誉字段对一半
+  公司是 NULL，"多少亿元"配 NULL gold 是不公平的题）；增长题强制同报告期口径（累计口径下
+  环比是陷阱，故不设环比题）；筛选题阈值按真实分布取 2–8 家命中；`expect_absent` 题的
+  gold SQL 本身返回 0 行，即"缺失的证明"，构建时逐题验证。`tests/test_astock_tasks.py`
+  钉死数据集 digest（`7ce52c5b`），重建库或题目而不重跑评测会故意让 CI 变红。
+- **数据源衰减已记录**（`scripts/fin_fetch.py` 模块注释）：`RPT_CSDC_LIST`（质押）整表为空，
+  质押表放弃而非造假；东财 K 线主机中途开始直接断连，日线改用腾讯 `fqkline`，
+  `daily_quotes` 因此没有成交额/换手率列，`pct_chg` 由构建器按相邻收盘价推导。
+- **当前状态**：mock 全流程 83/83 全对、$0、产物 `results/fin-mock-pipeline.jsonl`（证明的是
+  管道与判分器，不是模型）。**尚无真实模型跑分**——本机无 API key；live 跑法：
+  `uv run python scripts/fin_eval.py --model deepseek-chat`（估约 250 次 LLM 调用，成本与主基准
+  同量级的零头）。README 新章节同日入库。
