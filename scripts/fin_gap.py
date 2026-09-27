@@ -33,6 +33,7 @@ $0 by construction: no model is called, everything is re-execution of stored SQL
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
@@ -48,7 +49,6 @@ from sqlagent.eval.scoring import execute, score_execution  # noqa: E402
 
 DB = ROOT / "data" / "astock.db"
 RESULTS = ROOT / "results"
-OUT = RESULTS / "fin-gap.jsonl"
 _MAX_EXTRA_SUBSETS = 16  # pred with more columns than that is not worth enumerating
 
 
@@ -85,22 +85,30 @@ def Execution_of(pred, subset):
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description="Two-policy re-judgement of stored finance answers ($0).")
+    ap.add_argument("--source", type=Path, default=None,
+                    help="a results/fin-*.jsonl file; default = latest live run")
+    args = ap.parse_args()
+
     result_files = sorted(RESULTS.glob("fin-*.jsonl"))
     result_files = [p for p in result_files if "gap" not in p.name and "mock" not in p.name]
-    if not result_files:
-        raise SystemExit("no live finance result file found")
-    src = result_files[-1]
+    src = args.source if args.source else result_files[-1]
+    if not src.exists():
+        raise SystemExit(f"no such result file: {src}")
     rows = [json.loads(l) for l in src.read_text(encoding="utf-8").splitlines() if l.strip()]
     summary, tasks = rows[0]["_summary"], rows[1:]
     model = f"{summary['provider']}/{summary['model']}"
     print(f"re-judging {len(tasks)} stored answers from {src.name} ({model})\n")
 
     conn = sqlite3.connect(f"file:{DB.as_posix()}?mode=ro", uri=True)
+    task_meta = {json.loads(l)["id"]: json.loads(l)
+                 for l in (ROOT / "data" / "tasks_finance.jsonl").read_text(encoding="utf-8").splitlines()
+                 if l.strip()}
     out_rows, strict_mismatch = [], 0
+    unit = {"asked": 0, "strict_wrong": 0, "value_ok_unit_wrong": 0}
     for t in tasks:
-        gold_sql = next((json.loads(l)["gold_sql"] for l in
-                         (ROOT / "data" / "tasks_finance.jsonl").read_text(encoding="utf-8").splitlines()
-                         if json.loads(l)["id"] == t["id"]), None)
+        meta = task_meta[t["id"]]
+        gold_sql = meta["gold_sql"]
         rec = {"id": t["id"], "category": t["category"], "expect_absent": t["expect_absent"],
                "stored_reason": t["reason"], "stored_correct": t["correct"]}
         if t["expect_absent"]:
@@ -108,7 +116,8 @@ def main() -> int:
             rec["strict_correct"], rec["strict_reason"] = v.correct, v.reason
             rec["answer_text"] = (t.get("answer_text") or "")[:300]
         else:
-            v = score_execution(execute(conn, gold_sql), execute(conn, t["final_sql"]),
+            gold_exec = execute(conn, gold_sql)
+            v = score_execution(gold_exec, execute(conn, t["final_sql"]),
                                 require_order=t.get("require_order", False))
             rec["strict_correct"], rec["strict_reason"] = v.correct, v.reason
             if v.reason != t["reason"]:
@@ -116,6 +125,23 @@ def main() -> int:
             rv = relaxed_verdict(conn, gold_sql, t["final_sql"], t.get("require_order", False))
             rec["relaxed_correct"] = bool(rv.correct) if rv else False
             rec["relaxed_matched"] = bool(rv.correct) if rv else None
+            # unit-compliance diagnostic (the question states 亿元; the model may
+            # return yuan): value counted correct if any numeric pred cell equals
+            # the gold value scaled by 1e8. A diagnostic, not an accepted policy.
+            asks_yi = "亿元" in meta["question"]
+            if asks_yi:
+                unit["asked"] += 1
+                if not rec["strict_correct"]:
+                    unit["strict_wrong"] += 1
+                    if not rec["relaxed_correct"] and gold_exec.ok and len(gold_exec.rows) == 1:
+                        gv = gold_exec.rows[0][0]
+                        if isinstance(gv, (int, float)):
+                            pred_exec = execute(conn, t["final_sql"])
+                            cands = [c for row in (pred_exec.rows if pred_exec.ok else [])
+                                     for c in row if isinstance(c, (int, float))]
+                            if any(abs(c - gv * 1e8) <= max(1e-4, abs(gv * 1e8) * 1e-6) for c in cands):
+                                unit["value_ok_unit_wrong"] += 1
+                                rec["unit_violation"] = True
         out_rows.append(rec)
 
     answerable = [r for r in out_rows if not r["expect_absent"]]
@@ -136,6 +162,9 @@ def main() -> int:
         print(f"{cat:<18} {d['n']:>3} {d['strict']/d['n']:>7.2f} {d['relaxed']/d['n']:>8.2f}")
     print(f"\nabsence n={len(absent)}  strict={sum(r['strict_correct'] for r in absent)}/{len(absent)}"
           f"  reasons={dict(Counter(r['strict_reason'] for r in absent))}")
+    if unit["asked"]:
+        print(f"unit compliance (questions asking 亿元): asked={unit['asked']}  strict_wrong={unit['strict_wrong']}  "
+              f"value_ok_but_yuan={unit['value_ok_unit_wrong']}")
     print("non-strict absence cases (answer text laid out for human triage):")
     for r in absent:
         if not r["strict_correct"]:
@@ -146,6 +175,8 @@ def main() -> int:
         fh.write(json.dumps({"_summary": {"source": src.name, "model": model,
                                           "answerable_strict": len(strict_ok) / len(answerable),
                                           "answerable_relaxed": len(relaxed_ok) / len(answerable),
+                                          "unit_asked": unit["asked"],
+                                          "unit_value_ok_but_yuan": unit["value_ok_unit_wrong"],
                                           "strict_selfcheck_mismatches": strict_mismatch}},
                             ensure_ascii=False) + "\n")
         for r in out_rows:

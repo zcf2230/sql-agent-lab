@@ -444,32 +444,38 @@ check, `--model deepseek-chat` for a live run, and
 `python scripts/fin_gap.py` for the $0 two-policy re-judgement of stored
 answers (`scripts/bird_gap.py`'s fin counterpart).
 
-**First live numbers** (deepseek-chat, 89 tasks, $0.0936,
-`results/fin-deepseek-chat.jsonl`; one model, one run — a measurement, not a
-leaderboard):
+**Live numbers** (89 tasks; two models sharing one API key;
+`results/fin-deepseek-chat.jsonl` $0.094, `results/fin-deepseek-reasoner.jsonl`
+$0.230; `scripts/fin_gap.py` re-judges stored answers under both column
+policies for $0 and self-checks strict against the stored verdicts — 0
+mismatches):
 
-* answerable, **strict** (main judge, column sets must match): **21.6%**;
-  **relaxed** (a column *subset* of the prediction may match, same value
-  tolerance, `fin_gap.py`): **68.9%**. The 47-point gap is one behaviour:
-  the model returns research-friendly context columns
-  (`short_name, report_date, value`) where the question asked for a single
-  number — the same failure shape §26 measured on BIRD, here at 69% of
-  failures.
-* **unit compliance is where it actually breaks**: of the 14 metric-lookup
-  questions that explicitly ask for 亿元, 10 return the raw yuan figure —
-  value correct, unit wrong, zero real lookup errors. In A-share research
-  that is the classic way a screening list goes wrong by 8 digits.
-* **absence**, strict (final SQL returns zero rows): **6/15**. The other 9
-  are counted `fabricated_result` by the mechanical judge, but every one of
-  the 9 states the absence explicitly in its answer text ("there is no
-  2026-09-30 record… so the requested figure cannot be retrieved") and
-  returns an evidence-shaped row instead — **zero cases presented a number
-  as the answer**. The triage is recorded in `docs/HANDOFF.md` §27; the
-  strict policy is kept as the pre-registered instrument rather than
-  loosened after seeing results.
-* strongest families (relaxed): growth 100%, ratio 100%, screening 92%,
-  topk 88%; weakest: aggregation 25% — real calculation errors, no column
-  excuse.
+| answerable (n=74) | strict | relaxed (column-subset) |
+|---|---|---|
+| deepseek-chat | **21.6%** | **68.9%** |
+| deepseek-reasoner | 13.5% | 66.2% |
+
+* The 47/53-point strict-relaxed gaps are one behaviour: both models return
+  research-friendly context columns (`short_name, report_date, value`) where
+  the question asked for a single number — the failure shape §26 measured on
+  BIRD, here at ~69% of failures.
+* **The reasoning model is not better at this.** Relaxed is a wash (66% vs
+  69%), strict is *worse* (more context columns), and it exhausted its step
+  budget mid-verification on 3 of 15 absence tasks. More thinking ≠ more
+  compliant output.
+* **Unit compliance is where both break** (17 answerable questions explicitly
+  ask for 亿元): deepseek-chat produces a fully compliant answer on **1/17**
+  (12 more are value-correct but in yuan — zero real lookup errors); reasoner
+  **2/17** (9 value-correct-but-yuan). In A-share research that is the classic
+  way a screening list goes wrong by 8 digits.
+* **Absence**, strict (final SQL returns zero rows): chat **6/15**, reasoner
+  **4/15**. The remaining cases are counted `fabricated_result` by the
+  mechanical judge, but per-case triage of the stored answer texts finds the
+  model explicitly states the absence in prose or exhausts its budget on
+  evidence-shaped verification queries — **zero cases across 30 absence tasks
+  presented a number as the answer**. Triage quotes live in
+  `results/fin-gap-*.jsonl`; the strict policy is kept as pre-registered
+  rather than loosened after seeing results.
 
 Data-source decays discovered during the build, recorded so nobody re-discovers
 them: CSDC pledge ratios (`RPT_CSDC_LIST`) return an empty table for every

@@ -1558,3 +1558,23 @@ v1 的 83 题跑分作废，只在 history 里。
 
 复现：`uv run python scripts/fin_eval.py --model deepseek-chat`（DPAPI 密封凭据，约 $0.09）→
 `uv run python scripts/fin_gap.py`。
+
+### 27.2 双模型对照（deepseek-reasoner，同 key 密封第二槽位，2026-09-26）
+
+单一模型单次跑分的基准容易被读成"为这个模型调的"，且本机只有一个 DeepSeek key——
+而同一个 key 本就同时服务 deepseek-chat 与 deepseek-reasoner，于是把 key 密封进
+`sqlagent.deepseek_reasoner.dpapi` 槽位（DPAPI 按模型分槽正是为此设计的），
+`fin_gap.py` 加了 `--source` 与单位依从指标（题面含"亿元"的题：strict 错但 pred 任一
+数值单元 ×1e8 后等于 gold 值 → 记 `value_ok_but_yuan`，是**诊断口径不是接受口径**）。
+
+| 可答题（n=74） | strict | relaxed | 亿元完全合规 | 数值对但单位是元 | absence 严格 | absence 编造提交 |
+|---|---|---|---|---|---|---|
+| deepseek-chat（$0.094） | **21.6%** | **68.9%** | 1/17 | 12 | 6/15 | **0** |
+| deepseek-reasoner（$0.230） | 13.5% | 66.2% | 2/17 | 9 | 4/15 | **0** |
+
+- **推理模型在这个基准上并不更好**：宽松口径打平，严格口径更差（上下文列更多），
+  15 道拒答题里 3 题在验证查询中途耗尽 8 步预算（最后一查仍是证据形态：
+  `SELECT COUNT(*) WHERE report_date LIKE '2022%'` → 0）。"想得更多 ≠ 输出更守约"。
+- 两模型 30 道拒答题合计，把编造数字当答案提交的次数为 **0**；机械严格口径的
+  `fabricated_result` 全部是证据形状的行或预算耗尽，分诊引文在 `results/fin-gap-*.jsonl`。
+- 自检：两次 fin_gap 对已存答案重算严格裁决，与存储判定均 **0 分歧**。
